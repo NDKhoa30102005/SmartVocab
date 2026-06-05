@@ -6,8 +6,10 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.smartvocab.ui.onboarding.*
 import com.example.smartvocab.ui.auth.*
+import com.example.smartvocab.ui.auth.AuthViewModel
 import com.example.smartvocab.ui.dashboard.*
 import com.example.smartvocab.ui.vocabulary.*
 import com.example.smartvocab.ui.learning.*
@@ -18,6 +20,7 @@ import com.example.smartvocab.ui.settings.*
 
 @Composable
 fun NavGraph(navController: NavHostController) {
+    val authViewModel: AuthViewModel = viewModel()
     NavHost(
         navController = navController,
         startDestination = Screen.Splash.route
@@ -40,10 +43,16 @@ fun NavGraph(navController: NavHostController) {
 
         // Auth Screens
         composable(Screen.Login.route) {
-            LoginScreen(navController = navController)
+            LoginScreen(navController = navController, authViewModel = authViewModel)
         }
         composable(Screen.Register.route) {
-            RegisterScreen(navController = navController)
+            RegisterScreen(navController = navController, authViewModel = authViewModel)
+        }
+        composable(Screen.ForgotPassword.route) {
+            ForgotPasswordScreen(navController = navController, authViewModel = authViewModel)
+        }
+        composable(Screen.OtpVerification.route) {
+            OtpVerificationScreen(navController = navController, authViewModel = authViewModel)
         }
 
         // Main App Container (with Bottom Navigation)

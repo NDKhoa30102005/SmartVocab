@@ -25,11 +25,20 @@ import kotlinx.coroutines.delay
 
 @Composable
 fun SplashScreen(navController: NavHostController) {
-    // Auto transition to Welcome Screen
+    // Auto transition - check auth state
     LaunchedEffect(key1 = true) {
         delay(2500)
-        navController.navigate(Screen.Welcome.route) {
-            popUpTo(Screen.Splash.route) { inclusive = true }
+        val currentUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+        if (currentUser != null) {
+            // User is already logged in
+            navController.navigate(Screen.Main.route) {
+                popUpTo(Screen.Splash.route) { inclusive = true }
+            }
+        } else {
+            // User not logged in, go to onboarding
+            navController.navigate(Screen.Welcome.route) {
+                popUpTo(Screen.Splash.route) { inclusive = true }
+            }
         }
     }
 

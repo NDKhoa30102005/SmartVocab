@@ -7,6 +7,8 @@ sealed class Screen(val route: String) {
     object Level : Screen("level")
     object Login : Screen("login")
     object Register : Screen("register")
+    object ForgotPassword : Screen("forgot_password")
+    object OtpVerification : Screen("otp_verification")
     object Main : Screen("main") // Main App with Bottom Navigation Bar
 
     // Sub-screens

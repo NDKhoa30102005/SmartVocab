@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "112418830390",
+    "project_id": "smartvocab-691ea",
+    "storage_bucket": "smartvocab-691ea.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:112418830390:android:222cca92b5e5d3c5b18097",
+        "android_client_info": {
+          "package_name": "com.example.smartvocab"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAaltX9jHZLjMt9byZbKO1Vb4x7wWf5hB8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

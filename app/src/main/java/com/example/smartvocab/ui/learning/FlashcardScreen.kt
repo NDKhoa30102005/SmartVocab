@@ -36,7 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import com.example.smartvocab.data.MockData
-import com.example.smartvocab.data.Word
+import com.example.smartvocab.data.model.VocabularyWord
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -46,7 +46,7 @@ fun FlashcardScreen(navController: NavHostController, setId: String?) {
     val words = remember {
         MockData.words.filter { it.setId == filterSetId }.ifEmpty {
             listOf(
-                Word(
+                VocabularyWord(
                     id = "dummy",
                     setId = "ielts_academic",
                     term = "Profound",

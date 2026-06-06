@@ -9,7 +9,7 @@ import androidx.navigation.navArgument
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.smartvocab.ui.onboarding.*
 import com.example.smartvocab.ui.auth.*
-import com.example.smartvocab.ui.auth.AuthViewModel
+import com.example.smartvocab.viewmodel.AuthViewModel
 import com.example.smartvocab.ui.dashboard.*
 import com.example.smartvocab.ui.vocabulary.*
 import com.example.smartvocab.ui.learning.*
@@ -60,35 +60,8 @@ fun NavGraph(navController: NavHostController) {
             MainScreen(navController = navController)
         }
 
-        // Vocabulary Detail Screen
-        composable(
-            route = Screen.VocabSetDetail.route,
-            arguments = listOf(navArgument("setId") { type = NavType.StringType })
-        ) { backStackEntry ->
-            val setId = backStackEntry.arguments?.getString("setId") ?: ""
-            VocabSetDetailScreen(navController = navController, setId = setId)
-        }
-
-        // Add/Edit Word Screen
-        composable(
-            route = Screen.AddEditWord.route,
-            arguments = listOf(
-                navArgument("setId") { 
-                    type = NavType.StringType
-                    nullable = true
-                    defaultValue = "null"
-                },
-                navArgument("wordId") { 
-                    type = NavType.StringType
-                    nullable = true
-                    defaultValue = "null"
-                }
-            )
-        ) { backStackEntry ->
-            val setId = backStackEntry.arguments?.getString("setId").let { if (it == "null") null else it }
-            val wordId = backStackEntry.arguments?.getString("wordId").let { if (it == "null") null else it }
-            AddEditWordScreen(navController = navController, setId = setId, wordId = wordId)
-        }
+        // Vocabulary Module Nested Graph
+        vocabularyGraph(navController = navController)
 
         // Flashcard Learning Screen
         composable(

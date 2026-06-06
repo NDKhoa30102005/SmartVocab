@@ -22,6 +22,7 @@ import androidx.navigation.NavHostController
 import com.example.smartvocab.navigation.Screen
 import com.example.smartvocab.ui.components.M3TextField
 import com.example.smartvocab.ui.components.PrimaryButton
+import com.example.smartvocab.viewmodel.AuthViewModel
 
 @Composable
 fun ForgotPasswordScreen(

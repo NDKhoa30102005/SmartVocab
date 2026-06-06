@@ -27,6 +27,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import com.example.smartvocab.navigation.Screen
+import com.example.smartvocab.viewmodel.AuthViewModel
+import com.example.smartvocab.viewmodel.AuthPurpose
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)

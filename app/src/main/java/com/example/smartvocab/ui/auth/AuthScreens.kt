@@ -33,6 +33,7 @@ import com.example.smartvocab.ui.components.SecondaryButton
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import kotlinx.coroutines.launch
+import com.example.smartvocab.viewmodel.AuthViewModel
 
 // TODO: Replace with your actual Web Client ID from Firebase Console
 private const val WEB_CLIENT_ID = "YOUR_WEB_CLIENT_ID_HERE"

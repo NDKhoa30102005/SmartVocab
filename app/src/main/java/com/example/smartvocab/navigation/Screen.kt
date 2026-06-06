@@ -15,6 +15,13 @@ sealed class Screen(val route: String) {
     object VocabSetDetail : Screen("vocab_set_detail/{setId}") {
         fun createRoute(setId: String) = "vocab_set_detail/$setId"
     }
+
+    object AddEditSet : Screen("add_edit_set?setId={setId}") {
+        fun createRoute(setId: String? = null): String {
+            val sId = setId ?: "null"
+            return "add_edit_set?setId=$sId"
+        }
+    }
     
     object AddEditWord : Screen("add_edit_word?setId={setId}&wordId={wordId}") {
         fun createRoute(setId: String? = null, wordId: String? = null): String {

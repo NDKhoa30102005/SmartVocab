@@ -1,4 +1,4 @@
-package com.example.smartvocab.ui.auth
+package com.example.smartvocab.viewmodel
 
 import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateOf

@@ -15,6 +15,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -120,7 +121,10 @@ fun SplashScreen(navController: NavHostController) {
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .size(96.dp)
-                    .scale(scale)
+                    .graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                    }
                     .background(
                         color = MaterialTheme.colorScheme.primaryContainer,
                         shape = RoundedCornerShape(24.dp)
@@ -181,19 +185,19 @@ fun SplashScreen(navController: NavHostController) {
                 Box(
                     modifier = Modifier
                         .size(10.dp)
-                        .alpha(pulse1)
+                        .graphicsLayer { alpha = pulse1 }
                         .background(MaterialTheme.colorScheme.primary, CircleShape)
                 )
                 Box(
                     modifier = Modifier
                         .size(10.dp)
-                        .alpha(pulse2)
+                        .graphicsLayer { alpha = pulse2 }
                         .background(MaterialTheme.colorScheme.primary, CircleShape)
                 )
                 Box(
                     modifier = Modifier
                         .size(10.dp)
-                        .alpha(pulse3)
+                        .graphicsLayer { alpha = pulse3 }
                         .background(MaterialTheme.colorScheme.primary, CircleShape)
                 )
             }

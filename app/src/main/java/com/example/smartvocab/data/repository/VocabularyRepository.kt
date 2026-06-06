@@ -45,6 +45,7 @@ class FirestoreVocabularyRepository : VocabularyRepository {
 
     override fun getVocabularySets(userId: String): Flow<List<VocabularySet>> = callbackFlow {
         val listener = firestore.collection("vocabulary_sets")
+            .whereIn("userId", listOf(userId, "system"))
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     close(error)

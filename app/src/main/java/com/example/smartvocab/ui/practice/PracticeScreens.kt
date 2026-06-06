@@ -35,108 +35,208 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import com.example.smartvocab.navigation.Screen
 import kotlinx.coroutines.delay
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.smartvocab.viewmodel.VocabularySetsViewModel
+import com.example.smartvocab.data.model.VocabularySet
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 
-// Practice Selection Tab
+// Flashcard Selection Tab
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PracticeTab(parentNavController: NavHostController) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-    ) {
-        // Top Bar
-        TopAppBar(
-            title = {
-                Text(
-                    text = "SmartVocab",
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            },
-            colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = MaterialTheme.colorScheme.background
-            )
-        )
+fun FlashcardTab(
+    parentNavController: NavHostController,
+    viewModel: VocabularySetsViewModel = viewModel()
+) {
+    val uiState by viewModel.uiState
 
+    // Reload sets when entering
+    LaunchedEffect(key1 = true) {
+        viewModel.loadSets()
+    }
+
+    Scaffold(
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = {
+                    Text(
+                        text = "Thẻ ghi nhớ",
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontSize = 20.sp
+                    )
+                },
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                )
+            )
+        }
+    ) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(24.dp)
+                .background(MaterialTheme.colorScheme.background)
+                .padding(innerPadding)
+                .padding(horizontal = 24.dp)
         ) {
-            // Header
-            Column {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Chọn một bộ từ vựng dưới đây để bắt đầu ôn tập bằng thẻ ghi nhớ (Flashcard).",
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+
+            when {
+                uiState.isLoading -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                }
+                uiState.errorMessage != null -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = uiState.errorMessage ?: "Có lỗi xảy ra",
+                            color = MaterialTheme.colorScheme.error,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+                uiState.sets.isEmpty() -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Không tìm thấy bộ từ vựng nào.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+                else -> {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(1),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        items(uiState.sets) { set ->
+                            PracticeVocabularySetCard(
+                                set = set,
+                                onClick = {
+                                    parentNavController.navigate(Screen.FlashcardLearning.createRoute(set.id))
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun PracticeVocabularySetCard(
+    set: VocabularySet,
+    onClick: () -> Unit
+) {
+    val progressPercent = (set.progress * 100).toInt()
+    val wordsLearned = (set.progress * set.wordCount).toInt()
+
+    Card(
+        onClick = onClick,
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(1.dp, RoundedCornerShape(24.dp))
+            .border(
+                1.dp,
+                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
+                RoundedCornerShape(24.dp)
+            )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Text(
-                    text = "Luyện tập",
-                    fontSize = 28.sp,
+                    text = set.title,
+                    fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
-                Spacer(modifier = Modifier.height(4.dp))
+                
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = set.category,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            Text(
+                text = set.description,
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2
+            )
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Text(
-                    text = "Chọn một dạng bài tập để củng cố từ vựng và kỹ năng của bạn hôm nay.",
-                    fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    text = "$wordsLearned/${set.wordCount} từ đã thuộc",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = "$progressPercent%",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold
                 )
             }
-
-            // Grid Layout
-            Column(
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    // 1. Trắc nghiệm
-                    PracticeCard(
-                        title = "Trắc nghiệm",
-                        icon = Icons.Default.Quiz,
-                        iconBg = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f),
-                        iconColor = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.weight(1f),
-                        onClick = { parentNavController.navigate(Screen.QuizQuestion.createRoute()) }
-                    )
-
-                    // 2. Điền từ
-                    PracticeCard(
-                        title = "Điền từ",
-                        icon = Icons.Default.Description,
-                        iconBg = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f),
-                        iconColor = MaterialTheme.colorScheme.secondary,
-                        modifier = Modifier.weight(1f),
-                        onClick = { parentNavController.navigate(Screen.QuizQuestion.createRoute()) }
-                    )
-                }
-
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    // 3. Ghép từ
-                    PracticeCard(
-                        title = "Ghép từ",
-                        icon = Icons.Default.Extension,
-                        iconBg = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.3f),
-                        iconColor = MaterialTheme.colorScheme.tertiary,
-                        modifier = Modifier.weight(1f),
-                        onClick = { parentNavController.navigate(Screen.QuizQuestion.createRoute()) }
-                    )
-
-                    // 4. Nghe & Viết
-                    PracticeCard(
-                        title = "Nghe & Viết",
-                        icon = Icons.Default.Headphones,
-                        iconBg = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f),
-                        iconColor = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.weight(1f),
-                        onClick = { parentNavController.navigate(Screen.QuizQuestion.createRoute()) }
-                    )
-                }
-            }
+            
+            Spacer(modifier = Modifier.height(6.dp))
+            
+            LinearProgressIndicator(
+                progress = set.progress,
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                strokeCap = StrokeCap.Round,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .clip(RoundedCornerShape(4.dp))
+            )
         }
     }
 }

@@ -159,7 +159,7 @@ fun AppBottomBar(
     val items = listOf(
         NavigationItem("Trang chủ", "dashboard", Icons.Default.Home),
         NavigationItem("Bộ từ", "vocabulary_sets", Icons.Default.MenuBook),
-        NavigationItem("Luyện tập", "practice", Icons.Default.School),
+        NavigationItem("Flashcard", "flashcard", Icons.Default.Style),
         NavigationItem("Thống kê", "statistics", Icons.Default.Leaderboard),
         NavigationItem("Cá nhân", "profile", Icons.Default.Person)
     )

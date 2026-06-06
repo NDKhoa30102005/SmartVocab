@@ -32,7 +32,7 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import com.example.smartvocab.navigation.Screen
 import com.example.smartvocab.ui.components.AppBottomBar
-import com.example.smartvocab.ui.practice.PracticeTab
+import com.example.smartvocab.ui.practice.FlashcardTab
 import com.example.smartvocab.ui.progress.StatisticsTab
 import com.example.smartvocab.ui.settings.SettingsTab
 import com.example.smartvocab.ui.vocabulary.VocabularySetsTab
@@ -76,7 +76,7 @@ fun MainScreen(navController: NavHostController) {
             when (currentTab) {
                 "dashboard" -> DashboardTab(parentNavController = navController)
                 "vocabulary_sets" -> VocabularySetsTab(parentNavController = navController)
-                "practice" -> PracticeTab(parentNavController = navController)
+                "flashcard" -> FlashcardTab(parentNavController = navController)
                 "statistics" -> StatisticsTab(parentNavController = navController)
                 "profile" -> SettingsTab(parentNavController = navController)
             }

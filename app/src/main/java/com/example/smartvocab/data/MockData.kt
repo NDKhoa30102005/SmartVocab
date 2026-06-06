@@ -17,14 +17,15 @@ data class AppNotification(
 )
 
 data class Achievement(
-    val id: String,
-    val title: String,
-    val description: String,
-    val icon: String, // Material symbol icon name
-    val progress: Float, // 0.0 to 1.0
-    val currentVal: Int,
-    val targetVal: Int,
-    val isUnlocked: Boolean
+    val id: String = "",
+    val title: String = "",
+    val description: String = "",
+    val icon: String = "", // Material symbol icon name
+    val progress: Float = 0f, // 0.0 to 1.0
+    val currentVal: Int = 0,
+    val targetVal: Int = 0,
+    val isUnlocked: Boolean = false,
+    val userId: String = ""
 )
 
 // Mock Data Singleton

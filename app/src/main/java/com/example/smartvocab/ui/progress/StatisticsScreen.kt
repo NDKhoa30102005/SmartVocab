@@ -24,7 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import com.example.smartvocab.data.Achievement
-import com.example.smartvocab.data.MockData
+import com.example.smartvocab.data.model.DailyActivity
 
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.smartvocab.viewmodel.ProgressViewModel
@@ -40,6 +40,7 @@ fun StatisticsTab(
     val activities by viewModel.dailyActivities
     val isLoading by viewModel.isLoading
     val errorMessage by viewModel.errorMessage
+    val achievements by viewModel.achievements
 
     Column(
         modifier = Modifier
@@ -118,6 +119,39 @@ fun StatisticsTab(
                         fontSize = 14.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+
+                if (!viewModel.hasLearningData) {
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(
+                                1.dp,
+                                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
+                                RoundedCornerShape(16.dp)
+                            )
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Info,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Text(
+                                text = "Chưa có dữ liệu để thống kê.",
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                lineHeight = 18.sp
+                            )
+                        }
+                    }
                 }
 
                 // Level Estimate Banner
@@ -300,10 +334,24 @@ fun StatisticsTab(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.Bottom
                         ) {
-                            val maxLearned = activities.maxOfOrNull { it.learnedWords } ?: 1
+                            val chartActivities = if (activities.isEmpty()) {
+                                listOf(
+                                    DailyActivity(date = "T2"),
+                                    DailyActivity(date = "T3"),
+                                    DailyActivity(date = "T4"),
+                                    DailyActivity(date = "T5"),
+                                    DailyActivity(date = "T6"),
+                                    DailyActivity(date = "T7"),
+                                    DailyActivity(date = "CN")
+                                )
+                            } else {
+                                activities
+                            }
+                            val maxLearned = chartActivities.maxOfOrNull { it.learnedWords } ?: 0
+                            val maxLearnedVal = if (maxLearned > 0) maxLearned else 1
                             val todayDay = getTodayDayOfWeek()
-                            val chartData = activities.map { activity ->
-                                val percentage = if (maxLearned > 0) activity.learnedWords.toFloat() / maxLearned else 0f
+                            val chartData = chartActivities.map { activity ->
+                                val percentage = if (maxLearnedVal > 0) activity.learnedWords.toFloat() / maxLearnedVal else 0f
                                 ChartBar(
                                     day = activity.date,
                                     percentage = percentage.coerceIn(0.05f, 1f),
@@ -361,7 +409,7 @@ fun StatisticsTab(
                     )
 
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        MockData.achievements.forEach { achievement ->
+                        achievements.forEach { achievement ->
                             AchievementRow(achievement = achievement)
                         }
                     }

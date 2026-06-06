@@ -145,7 +145,7 @@ fun NotificationScreen(
                             )
                             Spacer(modifier = Modifier.height(16.dp))
                             Text(
-                                text = "Không có thông báo nào",
+                                text = "Chưa có thông báo nào",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 16.sp
                             )

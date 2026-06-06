@@ -7,6 +7,7 @@ import com.google.firebase.Timestamp
  */
 data class AppNotification(
     val id: String = "",                 // Mã định danh thông báo
+    val userId: String = "",             // Mã người dùng liên kết
     val title: String = "",             // Tiêu đề thông báo
     val message: String = "",           // Nội dung chi tiết
     val type: String = "SYSTEM",         // Loại thông báo ("REVIEW", "ACHIEVEMENT", "SYSTEM")

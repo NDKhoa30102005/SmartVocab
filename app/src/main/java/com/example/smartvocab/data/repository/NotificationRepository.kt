@@ -3,61 +3,62 @@ package com.example.smartvocab.data.repository
 import com.example.smartvocab.data.model.AppNotification
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
-import com.google.firebase.Timestamp
 
 /**
  * Lớp Repository kết nối trực tiếp với Firebase Firestore để quản lý danh sách thông báo.
+ * Sử dụng collection top-level 'notifications' và lọc theo userId.
  */
 class NotificationRepository {
     private val firestore = FirebaseFirestore.getInstance()
 
     /**
-     * Lấy danh sách các thông báo của người dùng sắp xếp theo thời gian mới nhất.
-     * Nếu không có thông báo nào, tự động seed danh sách thông báo mẫu lên Firestore.
+     * Lấy danh sách các thông báo của người dùng sắp xếp theo thời gian mới nhất (createdAt giảm dần).
+     * Không tự động seed thông báo mẫu.
      */
     suspend fun getNotifications(userId: String): List<AppNotification> {
-        val collRef = firestore.collection("users")
-            .document(userId)
-            .collection("notifications")
         return try {
-            val snapshot = collRef
+            val snapshot = firestore.collection("notifications")
+                .whereEqualTo("userId", userId)
                 .orderBy("createdAt", Query.Direction.DESCENDING)
                 .get()
                 .await()
-            if (snapshot.isEmpty) {
-                // Seed dữ liệu mẫu nếu chưa có thông báo nào
-                val mockData = getMockNotifications()
-                for (notification in mockData) {
-                    collRef.document(notification.id).set(notification).await()
-                }
-                mockData
-            } else {
-                snapshot.toObjects(AppNotification::class.java)
-            }
+            snapshot.toObjects(AppNotification::class.java)
         } catch (e: Exception) {
-            getMockNotifications()
+            // Trường hợp chưa tạo index Firestore cho orderBy, thực hiện sắp xếp cục bộ để tránh lỗi truy vấn
+            try {
+                val snapshot = firestore.collection("notifications")
+                    .whereEqualTo("userId", userId)
+                    .get()
+                    .await()
+                snapshot.toObjects(AppNotification::class.java)
+                    .sortedByDescending { it.createdAt }
+            } catch (ex: Exception) {
+                emptyList()
+            }
         }
     }
 
     /**
-     * Đánh dấu đã đọc một thông báo cụ thể.
+     * Đánh dấu đã đọc một thông báo cụ thể (chỉ cập nhật nếu đúng document liên kết).
      */
     suspend fun markAsRead(userId: String, notificationId: String): Result<Unit> = runCatching {
-        firestore.collection("users")
-            .document(userId)
-            .collection("notifications")
-            .document(notificationId)
-            .update("isRead", true)
-            .await()
+        val doc = firestore.collection("notifications").document(notificationId).get().await()
+        if (doc.exists() && doc.getString("userId") == userId) {
+            firestore.collection("notifications")
+                .document(notificationId)
+                .update("isRead", true)
+                .await()
+        } else {
+            throw Exception("Notification not found or access denied")
+        }
     }
 
     /**
-     * Đánh dấu tất cả thông báo của người dùng là đã đọc (sử dụng Firestore Batch Write để tối ưu).
+     * Đánh dấu tất cả thông báo của người dùng là đã đọc.
      */
     suspend fun markAllAsRead(userId: String): Result<Unit> = runCatching {
-        val snapshot = firestore.collection("users")
-            .document(userId)
-            .collection("notifications")
+        val snapshot = firestore.collection("notifications")
+            .whereEqualTo("userId", userId)
             .whereEqualTo("isRead", false)
             .get()
             .await()
@@ -72,47 +73,17 @@ class NotificationRepository {
     }
 
     /**
-     * Xóa một thông báo khỏi danh sách trên Firestore.
+     * Xóa một thông báo khỏi danh sách trên Firestore (chỉ xóa nếu đúng userId).
      */
     suspend fun deleteNotification(userId: String, notificationId: String): Result<Unit> = runCatching {
-        firestore.collection("users")
-            .document(userId)
-            .collection("notifications")
-            .document(notificationId)
-            .delete()
-            .await()
-    }
-
-    /**
-     * Dữ liệu thông báo mẫu phục vụ demo.
-     */
-    private fun getMockNotifications(): List<AppNotification> {
-        val now = Timestamp.now()
-        return listOf(
-            AppNotification(
-                id = "n1",
-                title = "Nhắc nhở ôn tập hôm nay",
-                message = "Đã đến lúc ôn tập rồi! Có 15 từ vựng đang chờ bạn củng cố trí nhớ.",
-                type = "REVIEW",
-                isRead = false,
-                createdAt = now
-            ),
-            AppNotification(
-                id = "n2",
-                title = "Thành tựu mới đạt được",
-                message = "Chúc mừng! Bạn đã nhận được huy hiệu 'Vua từ vựng' khi hoàn thành học 300 từ.",
-                type = "ACHIEVEMENT",
-                isRead = true,
-                createdAt = Timestamp(now.seconds - 7200, 0) // 2 giờ trước
-            ),
-            AppNotification(
-                id = "n3",
-                title = "Cập nhật hệ thống thành công",
-                message = "Chúng tôi vừa tối ưu hóa danh sách từ vựng IELTS Academic và cập nhật thêm ví dụ thực tế.",
-                type = "SYSTEM",
-                isRead = true,
-                createdAt = Timestamp(now.seconds - 86400, 0) // 1 ngày trước
-            )
-        )
+        val doc = firestore.collection("notifications").document(notificationId).get().await()
+        if (doc.exists() && doc.getString("userId") == userId) {
+            firestore.collection("notifications")
+                .document(notificationId)
+                .delete()
+                .await()
+        } else {
+            throw Exception("Notification not found or access denied")
+        }
     }
 }

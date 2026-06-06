@@ -27,16 +27,36 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import com.example.smartvocab.navigation.Screen
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.smartvocab.viewmodel.ProgressViewModel
+import com.google.firebase.auth.FirebaseAuth
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsTab(parentNavController: NavHostController) {
+fun SettingsTab(
+    parentNavController: NavHostController,
+    viewModel: ProgressViewModel = viewModel()
+) {
     val context = LocalContext.current
+    val settings by viewModel.learningSettings
+    val summary by viewModel.progressSummary
+    val userName by viewModel.userName
+    val email = FirebaseAuth.getInstance().currentUser?.email ?: "student@example.com"
+
     var newWordsCount by remember { mutableStateOf(10f) }
     var reviewWordsCount by remember { mutableStateOf(20f) }
     var dailyReminderTime by remember { mutableStateOf("20:00") }
     var pushEnabled by remember { mutableStateOf(true) }
     var emailEnabled by remember { mutableStateOf(false) }
+
+    // Đồng bộ hóa từ Firestore sang local state khi tải xong
+    LaunchedEffect(settings) {
+        newWordsCount = settings.newWordsPerDay.toFloat()
+        reviewWordsCount = settings.reviewWordsPerDay.toFloat()
+        dailyReminderTime = settings.reminderTime
+        pushEnabled = settings.pushNotificationEnabled
+        emailEnabled = settings.emailNotificationEnabled
+    }
 
     Column(
         modifier = Modifier
@@ -92,7 +112,7 @@ fun SettingsTab(parentNavController: NavHostController) {
                             .background(MaterialTheme.colorScheme.primaryContainer)
                     ) {
                         Text(
-                            text = "Alex",
+                            text = if (userName.isNotEmpty()) userName.take(1).uppercase() else "S",
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
                             fontSize = 24.sp,
@@ -124,13 +144,13 @@ fun SettingsTab(parentNavController: NavHostController) {
                         modifier = Modifier.weight(1f)
                     ) {
                         Text(
-                            text = "Alex",
+                            text = userName,
                             fontSize = 22.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "alex@example.com",
+                            text = email,
                             fontSize = 14.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -154,7 +174,7 @@ fun SettingsTab(parentNavController: NavHostController) {
                                 modifier = Modifier.size(16.dp)
                             )
                             Text(
-                                text = "Chuỗi 14 ngày",
+                                text = "Chuỗi ${summary.streakDays} ngày",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSecondaryContainer
@@ -179,7 +199,7 @@ fun SettingsTab(parentNavController: NavHostController) {
                 // Level Row
                 SettingsRow(
                     label = "Trình độ hiện tại",
-                    value = "B2 - Trung cấp trên",
+                    value = summary.levelEstimate,
                     onClick = { parentNavController.navigate(Screen.Level.route) }
                 )
             }
@@ -268,7 +288,6 @@ fun SettingsTab(parentNavController: NavHostController) {
                         .clickable {
                             // Dialog for time picker placeholder
                             dailyReminderTime = if (dailyReminderTime == "20:00") "09:00" else "20:00"
-                            Toast.makeText(context, "Đã đổi giờ nhắc nhở thành $dailyReminderTime", Toast.LENGTH_SHORT).show()
                         }
                         .padding(16.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -349,6 +368,42 @@ fun SettingsTab(parentNavController: NavHostController) {
                 }
             }
 
+            // Nút Lưu cài đặt
+            Button(
+                onClick = {
+                    val newSettings = settings.copy(
+                        newWordsPerDay = newWordsCount.toInt(),
+                        reviewWordsPerDay = reviewWordsCount.toInt(),
+                        reminderTime = dailyReminderTime,
+                        pushNotificationEnabled = pushEnabled,
+                        emailNotificationEnabled = emailEnabled
+                    )
+                    viewModel.updateSettings(newSettings) { success ->
+                        if (success) {
+                            Toast.makeText(context, "Đã lưu cài đặt thành công!", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(context, "Lưu cài đặt thất bại!", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp),
+                shape = RoundedCornerShape(20.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                )
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(imageVector = Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Text("Lưu cài đặt", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+
             // 5. Account Actions
             Card(
                 shape = RoundedCornerShape(24.dp),
@@ -393,7 +448,7 @@ fun SettingsTab(parentNavController: NavHostController) {
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable {
-                                // Logout logic
+                                FirebaseAuth.getInstance().signOut()
                                 parentNavController.navigate(Screen.Login.route) {
                                     popUpTo(0) { inclusive = true }
                                 }

@@ -27,29 +27,29 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
-import com.example.smartvocab.data.AppNotification
-import com.example.smartvocab.data.MockData
-import com.example.smartvocab.data.NotificationType
+import com.example.smartvocab.data.model.AppNotification
 import com.example.smartvocab.navigation.Screen
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.smartvocab.viewmodel.NotificationViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NotificationScreen(navController: NavHostController) {
+fun NotificationScreen(
+    navController: NavHostController,
+    viewModel: NotificationViewModel = viewModel()
+) {
     val context = LocalContext.current
-    var notificationList by remember { mutableStateOf(MockData.notifications.toMutableList()) }
+    val notificationList by viewModel.notifications
+    val isLoading by viewModel.isLoading
+    val errorMessage by viewModel.errorMessage
 
     fun markAllAsRead() {
-        notificationList = notificationList.map { it.copy(isUnread = false) }.toMutableList()
-        // Update mock database
-        MockData.notifications.clear()
-        MockData.notifications.addAll(notificationList)
+        viewModel.markAllAsRead()
         Toast.makeText(context, "Đã đánh dấu tất cả là đã đọc!", Toast.LENGTH_SHORT).show()
     }
 
     fun deleteNotification(id: String) {
-        notificationList.removeIf { it.id == id }
-        notificationList = notificationList.toMutableList() // trigger recomposition
-        MockData.notifications.removeIf { it.id == id }
+        viewModel.deleteNotification(id)
     }
 
     Scaffold(
@@ -81,78 +81,95 @@ fun NotificationScreen(navController: NavHostController) {
                 .padding(innerPadding)
                 .padding(horizontal = 16.dp)
         ) {
-            // Action Row
-            if (notificationList.isNotEmpty()) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 12.dp),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
+            if (isLoading) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
                 ) {
-                    TextButton(
-                        onClick = { markAllAsRead() },
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(Icons.Default.DoneAll, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Text(
-                                "Đánh dấu tất cả đã đọc",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
+                    CircularProgressIndicator()
                 }
-            }
-
-            // Notification List
-            if (notificationList.isEmpty()) {
+            } else if (errorMessage != null) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            imageVector = Icons.Default.NotificationsNone,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.outline,
-                            modifier = Modifier.size(72.dp)
-                        )
+                        Text(text = errorMessage ?: "Lỗi tải thông báo", color = MaterialTheme.colorScheme.error)
                         Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = "Không có thông báo nào",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 16.sp
-                        )
+                        Button(onClick = { viewModel.loadNotifications() }) {
+                            Text("Thử lại")
+                        }
                     }
                 }
             } else {
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    contentPadding = PaddingValues(bottom = 24.dp),
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    items(notificationList, key = { it.id }) { notification ->
-                        NotificationCard(
-                            notification = notification,
-                            onDelete = { deleteNotification(notification.id) },
-                            onActionClick = {
-                                if (notification.type == NotificationType.REVIEW) {
-                                    // Mark as read
-                                    val idx = notificationList.indexOf(notification)
-                                    if (idx != -1) {
-                                        notificationList[idx] = notification.copy(isUnread = false)
-                                        MockData.notifications.clear()
-                                        MockData.notifications.addAll(notificationList)
-                                    }
+                // Action Row
+                if (notificationList.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 12.dp),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(
+                            onClick = { markAllAsRead() },
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(Icons.Default.DoneAll, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Text(
+                                    "Đánh dấu tất cả đã đọc",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Notification List
+                if (notificationList.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                imageVector = Icons.Default.NotificationsNone,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.outline,
+                                modifier = Modifier.size(72.dp)
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = "Không có thông báo nào",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 16.sp
+                            )
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        contentPadding = PaddingValues(bottom = 24.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        items(notificationList, key = { it.id }) { notification ->
+                            NotificationCard(
+                                notification = notification,
+                                onDelete = { deleteNotification(notification.id) },
+                                onCardClick = {
+                                    viewModel.markAsRead(notification.id)
+                                },
+                                onActionClick = {
+                                    viewModel.markAsRead(notification.id)
                                     navController.navigate(Screen.FlashcardLearning.createRoute())
                                 }
-                            }
-                        )
+                            )
+                        }
                     }
                 }
             }
@@ -164,25 +181,25 @@ fun NotificationScreen(navController: NavHostController) {
 fun NotificationCard(
     notification: AppNotification,
     onDelete: () -> Unit,
+    onCardClick: () -> Unit,
     onActionClick: () -> Unit
 ) {
-    val iconsMap = mapOf(
-        NotificationType.REVIEW to Icons.Default.MenuBook,
-        NotificationType.ACHIEVEMENT to Icons.Default.EmojiEvents,
-        NotificationType.SYSTEM to Icons.Default.SystemUpdate
-    )
-    val icon = iconsMap[notification.type] ?: Icons.Default.Notifications
+    val icon = when (notification.type) {
+        "REVIEW" -> Icons.Default.MenuBook
+        "ACHIEVEMENT" -> Icons.Default.EmojiEvents
+        else -> Icons.Default.SystemUpdate
+    }
 
     val iconBg = when (notification.type) {
-        NotificationType.REVIEW -> MaterialTheme.colorScheme.primaryContainer
-        NotificationType.ACHIEVEMENT -> MaterialTheme.colorScheme.tertiaryContainer
-        NotificationType.SYSTEM -> MaterialTheme.colorScheme.surfaceVariant
+        "REVIEW" -> MaterialTheme.colorScheme.primaryContainer
+        "ACHIEVEMENT" -> MaterialTheme.colorScheme.tertiaryContainer
+        else -> MaterialTheme.colorScheme.surfaceVariant
     }
     
     val iconTint = when (notification.type) {
-        NotificationType.REVIEW -> MaterialTheme.colorScheme.onPrimaryContainer
-        NotificationType.ACHIEVEMENT -> MaterialTheme.colorScheme.onTertiaryContainer
-        NotificationType.SYSTEM -> MaterialTheme.colorScheme.onSurfaceVariant
+        "REVIEW" -> MaterialTheme.colorScheme.onPrimaryContainer
+        "ACHIEVEMENT" -> MaterialTheme.colorScheme.onTertiaryContainer
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 
     Card(
@@ -196,15 +213,25 @@ fun NotificationCard(
                 MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
                 RoundedCornerShape(16.dp)
             )
+            .clickable { onCardClick() }
     ) {
         Box(modifier = Modifier.fillMaxWidth()) {
             // Unread Indicator left line
-            if (notification.isUnread) {
+            if (!notification.isRead) {
                 Box(
                     modifier = Modifier
                         .align(Alignment.CenterStart)
                         .width(6.dp)
-                        .fillMaxHeight()
+                        .height(100.dp) // Set height or rely on container. Using dynamic line is better:
+                        // Instead of absolute height, let's make it match parent or use small layout. 
+                        // Actually, let's use matchParentSize() for the modifier to span exactly the height:
+                )
+                // Let's use Spacer with matchParentSize() inside Box to draw the left indicator:
+                Spacer(
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .width(6.dp)
+                        .matchParentSize()
                         .background(MaterialTheme.colorScheme.primary)
                 )
             }
@@ -249,7 +276,7 @@ fun NotificationCard(
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = notification.timeStamp,
+                                text = notification.getRelativeTime(),
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -258,14 +285,14 @@ fun NotificationCard(
                         Spacer(modifier = Modifier.height(4.dp))
                         
                         Text(
-                            text = notification.body,
+                            text = notification.message,
                             fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             lineHeight = 18.sp
                         )
 
                         // Special Action button if Review Reminder
-                        if (notification.type == NotificationType.REVIEW && notification.isUnread) {
+                        if (notification.type == "REVIEW" && !notification.isRead) {
                             Spacer(modifier = Modifier.height(12.dp))
                             Button(
                                 onClick = onActionClick,

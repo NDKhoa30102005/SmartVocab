@@ -26,9 +26,21 @@ import androidx.navigation.NavHostController
 import com.example.smartvocab.data.Achievement
 import com.example.smartvocab.data.MockData
 
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.smartvocab.viewmodel.ProgressViewModel
+import com.example.smartvocab.ui.dashboard.getTodayDayOfWeek
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun StatisticsTab(parentNavController: NavHostController) {
+fun StatisticsTab(
+    parentNavController: NavHostController,
+    viewModel: ProgressViewModel = viewModel()
+) {
+    val summary by viewModel.progressSummary
+    val activities by viewModel.dailyActivities
+    val isLoading by viewModel.isLoading
+    val errorMessage by viewModel.errorMessage
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -48,212 +60,314 @@ fun StatisticsTab(parentNavController: NavHostController) {
             )
         )
 
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(24.dp)
-        ) {
-            // Header
-            Column {
-                Text(
-                    text = "Thống kê học tập",
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "Theo dõi tiến độ và thành tích của bạn",
-                    fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            // Bento Grid Metrics
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    // Metric 1: Tổng từ đã học
-                    MetricCard(
-                        title = "Tổng từ đã học",
-                        value = "342",
-                        icon = Icons.Default.School,
-                        iconColor = MaterialTheme.colorScheme.primary,
-                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f),
-                        modifier = Modifier.weight(1f)
-                    )
-
-                    // Metric 2: Từ đã ghi nhớ
-                    MetricCard(
-                        title = "Từ đã ghi nhớ",
-                        value = "280",
-                        icon = Icons.Default.TaskAlt,
-                        iconColor = MaterialTheme.colorScheme.secondary,
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f),
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    // Metric 3: Từ cần ôn
-                    MetricCard(
-                        title = "Từ cần ôn",
-                        value = "15",
-                        icon = Icons.Default.Update,
-                        iconColor = MaterialTheme.colorScheme.error,
-                        containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f),
-                        modifier = Modifier.weight(1f)
-                    )
-
-                    // Metric 4: Chuỗi học
-                    MetricCard(
-                        title = "Chuỗi học (ngày)",
-                        value = "12",
-                        icon = Icons.Default.LocalFireDepartment,
-                        iconColor = MaterialTheme.colorScheme.tertiary,
-                        containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.2f),
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
-
-            // Charts Section (Hoạt động)
-            Card(
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
+        if (isLoading) {
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .border(
-                        1.dp,
-                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
-                        RoundedCornerShape(24.dp)
-                    )
+                    .fillMaxSize()
+                    .weight(1f),
+                contentAlignment = Alignment.Center
             ) {
-                Column(
-                    modifier = Modifier.padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                CircularProgressIndicator()
+            }
+        } else if (errorMessage != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .weight(1f)
+                    .padding(16.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        imageVector = Icons.Default.ErrorOutline,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(48.dp)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = errorMessage ?: "Đã xảy ra lỗi",
+                        color = MaterialTheme.colorScheme.error,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(onClick = { viewModel.loadProgress() }) {
+                        Text("Thử lại")
+                    }
+                }
+            }
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(24.dp)
+            ) {
+                // Header
+                Column {
+                    Text(
+                        text = "Thống kê học tập",
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Theo dõi tiến độ và thành tích của bạn",
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                // Level Estimate Banner
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(
+                            1.dp,
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                            RoundedCornerShape(16.dp)
+                        )
                 ) {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text(
-                            text = "Hoạt động",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
+                        Column {
+                            Text(
+                                text = "Ước lượng trình độ",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = summary.levelEstimate,
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.Default.TrendingUp,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(32.dp)
                         )
-                        
-                        // Interval Selector
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            modifier = Modifier.padding(1.dp)
+                    }
+                }
+
+                // Bento Grid Metrics
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        // Metric 1: Tổng từ đã học
+                        MetricCard(
+                            title = "Tổng từ đã học",
+                            value = "${summary.totalWordsLearned}",
+                            icon = Icons.Default.School,
+                            iconColor = MaterialTheme.colorScheme.primary,
+                            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f),
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        // Metric 2: Từ đã ghi nhớ
+                        MetricCard(
+                            title = "Từ đã ghi nhớ",
+                            value = "${summary.masteredWords}",
+                            icon = Icons.Default.TaskAlt,
+                            iconColor = MaterialTheme.colorScheme.secondary,
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        // Metric 3: Từ cần ôn
+                        MetricCard(
+                            title = "Từ cần ôn",
+                            value = "${summary.reviewDueWords}",
+                            icon = Icons.Default.Update,
+                            iconColor = MaterialTheme.colorScheme.error,
+                            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f),
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        // Metric 4: Chuỗi học
+                        MetricCard(
+                            title = "Chuỗi học (ngày)",
+                            value = "${summary.streakDays}",
+                            icon = Icons.Default.LocalFireDepartment,
+                            iconColor = MaterialTheme.colorScheme.tertiary,
+                            containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.2f),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        // Metric 5: Độ chính xác
+                        MetricCard(
+                            title = "Độ chính xác",
+                            value = "${summary.accuracy.toInt()}%",
+                            icon = Icons.Default.QueryStats,
+                            iconColor = MaterialTheme.colorScheme.primary,
+                            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f),
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        // Metric 6: Tỷ lệ ghi nhớ
+                        MetricCard(
+                            title = "Tỷ lệ ghi nhớ",
+                            value = "${summary.retentionRate.toInt()}%",
+                            icon = Icons.Default.Psychology,
+                            iconColor = MaterialTheme.colorScheme.secondary,
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+
+                // Charts Section (Hoạt động)
+                Card(
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(
+                            1.dp,
+                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
+                            RoundedCornerShape(24.dp)
+                        )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
-                                modifier = Modifier.padding(2.dp),
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            Text(
+                                text = "Hoạt động",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            
+                            // Interval Selector
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                modifier = Modifier.padding(1.dp)
                             ) {
-                                Surface(
-                                    shape = RoundedCornerShape(6.dp),
-                                    color = MaterialTheme.colorScheme.surfaceContainerLowest,
-                                    shadowElevation = 1.dp
+                                Row(
+                                    modifier = Modifier.padding(2.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = MaterialTheme.colorScheme.surfaceContainerLowest,
+                                        shadowElevation = 1.dp
+                                    ) {
+                                        Text(
+                                            text = "7 Ngày",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        )
+                                    }
                                     Text(
-                                        text = "7 Ngày",
+                                        text = "30 Ngày",
                                         fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                                     )
                                 }
-                                Text(
-                                    text = "30 Ngày",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                )
                             }
                         }
-                    }
 
-                    // Bar Chart
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(160.dp)
-                            .padding(top = 16.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.Bottom
-                    ) {
-                        val chartData = listOf(
-                            ChartBar("T2", 0.40f, "12"),
-                            ChartBar("T3", 0.60f, "18"),
-                            ChartBar("T4", 0.30f, "9"),
-                            ChartBar("T5", 0.80f, "24"),
-                            ChartBar("T6", 0.50f, "15"),
-                            ChartBar("T7", 0.95f, "28", isActive = true),
-                            ChartBar("CN", 0.70f, "21")
-                        )
+                        // Bar Chart
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(160.dp)
+                                .padding(top = 16.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.Bottom
+                        ) {
+                            val maxLearned = activities.maxOfOrNull { it.learnedWords } ?: 1
+                            val todayDay = getTodayDayOfWeek()
+                            val chartData = activities.map { activity ->
+                                val percentage = if (maxLearned > 0) activity.learnedWords.toFloat() / maxLearned else 0f
+                                ChartBar(
+                                    day = activity.date,
+                                    percentage = percentage.coerceIn(0.05f, 1f),
+                                    valueLabel = activity.learnedWords.toString(),
+                                    isActive = activity.date == todayDay
+                                )
+                            }
 
-                        chartData.forEach { bar ->
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Bottom,
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                // Value above bar
-                                Text(
-                                    text = bar.valueLabel,
-                                    fontSize = 11.sp,
-                                    fontWeight = if (bar.isActive) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (bar.isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                // Bar Column representation
-                                Box(
-                                    modifier = Modifier
-                                        .width(16.dp)
-                                        .fillMaxHeight(bar.percentage)
-                                        .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
-                                        .background(
-                                            if (bar.isActive) MaterialTheme.colorScheme.primary
-                                            else MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
-                                        )
-                                )
-                                Spacer(modifier = Modifier.height(8.dp))
-                                // Day label below
-                                Text(
-                                    text = bar.day,
-                                    fontSize = 12.sp,
-                                    fontWeight = if (bar.isActive) FontWeight.Bold else FontWeight.Medium,
-                                    color = if (bar.isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                            chartData.forEach { bar ->
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Bottom,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    // Value above bar
+                                    Text(
+                                        text = bar.valueLabel,
+                                        fontSize = 11.sp,
+                                        fontWeight = if (bar.isActive) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (bar.isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    // Bar Column representation
+                                    Box(
+                                        modifier = Modifier
+                                            .width(16.dp)
+                                            .fillMaxHeight(bar.percentage)
+                                            .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
+                                            .background(
+                                                if (bar.isActive) MaterialTheme.colorScheme.primary
+                                                else MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
+                                            )
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    // Day label below
+                                    Text(
+                                        text = bar.day,
+                                        fontSize = 12.sp,
+                                        fontWeight = if (bar.isActive) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (bar.isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                         }
                     }
                 }
-            }
 
-            // Achievements Section (Danh hiệu)
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text(
-                    text = "Danh hiệu",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+                // Achievements Section (Danh hiệu)
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Text(
+                        text = "Danh hiệu",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
 
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    MockData.achievements.forEach { achievement ->
-                        AchievementRow(achievement = achievement)
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        MockData.achievements.forEach { achievement ->
+                            AchievementRow(achievement = achievement)
+                        }
                     }
                 }
+                Spacer(modifier = Modifier.height(16.dp))
             }
-            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }

@@ -41,6 +41,8 @@ class VocabularySetsViewModel : ViewModel() {
     val isEditMode: Boolean
         get() = editingSetId != null
 
+    private var hasSeeded = false
+
     init {
         loadSets()
     }
@@ -49,28 +51,20 @@ class VocabularySetsViewModel : ViewModel() {
         val userId = auth.currentUser?.uid ?: return
         _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
         viewModelScope.launch {
-            val oldMockIds = listOf(
-                "ielts_academic",
-                "tech_startup",
-                "business_meetings",
-                "travel_essential",
-                "ielts_academic_$userId",
-                "tech_startup_$userId",
-                "business_meetings_$userId",
-                "travel_essential_$userId"
-            )
-            for (oldId in oldMockIds) {
-                repository.deleteVocabularySet(oldId)
-            }
-        }
-        viewModelScope.launch {
             try {
                 // Stream real-time vocabulary sets
                 repository.getVocabularySets(userId).collect { sets ->
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        sets = sets
-                    )
+                    if (sets.isEmpty() && !hasSeeded) {
+                        hasSeeded = true
+                        viewModelScope.launch {
+                            repository.seedDefaultData(userId)
+                        }
+                    } else {
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            sets = sets
+                        )
+                    }
                 }
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(

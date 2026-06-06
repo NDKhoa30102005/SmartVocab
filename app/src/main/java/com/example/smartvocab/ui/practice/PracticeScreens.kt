@@ -35,9 +35,15 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import com.example.smartvocab.navigation.Screen
 import kotlinx.coroutines.delay
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.smartvocab.viewmodel.VocabularySetsViewModel
 import com.example.smartvocab.data.model.VocabularySet
+import com.example.smartvocab.data.model.VocabularyWord
+import com.example.smartvocab.data.repository.FirestoreVocabularyRepository
+import com.example.smartvocab.data.repository.await
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.Timestamp
+import kotlinx.coroutines.launch
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -296,8 +302,8 @@ fun PracticeCard(
 }
 
 // Question Data Class Helper
-data class MockQuestion(
-    val word: String,
+data class QuizQuestionData(
+    val word: VocabularyWord,
     val options: List<String>,
     val correctIndex: Int
 )
@@ -306,25 +312,74 @@ data class MockQuestion(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QuizScreen(navController: NavHostController, setId: String?) {
-    // 5 Mock Questions
-    val questions = remember {
-        listOf(
-            MockQuestion("Ubiquitous", listOf("Có mặt ở khắp mọi nơi cùng một lúc, vô cùng phổ biến.", "Rất hiếm khi xảy ra hoặc khó tìm thấy.", "Có tính chất thù địch hoặc hung hăng.", "Liên quan đến các triết lý cổ đại."), 0),
-            MockQuestion("Ephemeral", listOf("Tồn tại vĩnh cửu và không thay đổi.", "Phù du, chóng tàn, chỉ tồn tại trong thời gian ngắn.", "Có tác dụng chữa bệnh và bồi bổ sức khỏe.", "Rất phức tạp và khó giải thích."), 1),
-            MockQuestion("Profound", listOf("Nông cạn, hời hợt, không có giá trị.", "Sâu sắc, uyên thâm, có ảnh hưởng lớn hoặc sâu rộng.", "Nhanh chóng, vội vã.", "Ồn ào, náo nhiệt."), 1),
-            MockQuestion("Elicit", listOf("Gợi ra, khơi gợi (một phản ứng, câu trả lời).", "Tránh né, che giấu sự thật.", "Bắt chước hành vi của người khác.", "Tranh cãi gay gắt."), 0),
-            MockQuestion("Pivot", listOf("Duy trì hướng đi cũ không đổi.", "Gây dựng lại từ đầu.", "Bước chuyển hướng chiến lược trong kinh doanh.", "Đầu tư tài chính mạo hiểm."), 2)
-        )
+    val repository = remember { FirestoreVocabularyRepository() }
+    val coroutineScope = rememberCoroutineScope()
+
+    var questions by remember { mutableStateOf<List<QuizQuestionData>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(setId) {
+        isLoading = true
+        errorMessage = null
+        try {
+            val allWordsSnapshot = FirebaseFirestore.getInstance().collection("vocabulary_words").get().await()
+            val globalWords = allWordsSnapshot.toObjects(VocabularyWord::class.java)
+            
+            val sessionWords = if (setId.isNullOrBlank() || setId == "null") {
+                globalWords.shuffled().take(5)
+            } else {
+                globalWords.filter { it.setId == setId }.shuffled().take(5)
+            }
+            
+            if (sessionWords.isEmpty()) {
+                errorMessage = "Bộ từ này chưa có từ vựng nào để làm Quiz."
+                isLoading = false
+                return@LaunchedEffect
+            }
+            
+            val generated = sessionWords.map { targetWord ->
+                val correctOption = targetWord.definition
+                val distractors = globalWords.filter { it.id != targetWord.id }
+                    .map { it.definition }
+                    .distinct()
+                    .shuffled()
+                    .take(3)
+                
+                val finalDistractors = (distractors + listOf(
+                    "Một khái niệm không xác định.",
+                    "Hành động lặp đi lặp lại nhiều lần.",
+                    "Trạng thái không rõ ràng."
+                )).take(3)
+                
+                val options = (finalDistractors + correctOption).shuffled()
+                val correctIndex = options.indexOf(correctOption)
+                
+                QuizQuestionData(
+                    word = targetWord,
+                    options = options,
+                    correctIndex = correctIndex
+                )
+            }
+            questions = generated
+            isLoading = false
+        } catch(e: Exception) {
+            errorMessage = "Lỗi khi tải Quiz: ${e.localizedMessage}"
+            isLoading = false
+        }
     }
 
     var currentQuestionIndex by remember { mutableStateOf(0) }
     var selectedOptionIndex by remember { mutableStateOf<Int?>(null) }
     var correctAnswersCount by remember { mutableStateOf(0) }
+    var isResultSubmitted by remember { mutableStateOf(false) }
+    var isAnswering by remember { mutableStateOf(false) }
     
     // Timer state
     var timeLeft by remember { mutableStateOf(165) } // 2:45 minutes
     
-    LaunchedEffect(key1 = true) {
+    LaunchedEffect(key1 = isLoading) {
+        if (isLoading) return@LaunchedEffect
         while (timeLeft > 0) {
             delay(1000)
             timeLeft--
@@ -335,7 +390,7 @@ fun QuizScreen(navController: NavHostController, setId: String?) {
     val seconds = timeLeft % 60
     val timerText = String.format("%02d:%02d", minutes, seconds)
     
-    val currentQuestion = questions[currentQuestionIndex]
+    val currentQuestion = questions.getOrNull(currentQuestionIndex)
 
     Scaffold(
         topBar = {
@@ -386,203 +441,254 @@ fun QuizScreen(navController: NavHostController, setId: String?) {
                 .padding(horizontal = 24.dp, vertical = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Progress Section
-            Column(
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Câu ${currentQuestionIndex + 1} / ${questions.size}",
-                        fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Text(
-                        text = "${((currentQuestionIndex + 1).toFloat() / questions.size * 100).toInt()}%",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-
-                LinearProgressIndicator(
-                    progress = (currentQuestionIndex + 1).toFloat() / questions.size,
-                    color = MaterialTheme.colorScheme.secondary,
-                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
-                    strokeCap = StrokeCap.Round,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(10.dp)
-                        .clip(RoundedCornerShape(5.dp))
-                )
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Question Card
-            Card(
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(
-                        1.dp,
-                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
-                        RoundedCornerShape(24.dp)
-                    )
-            ) {
-                Column(
-                    modifier = Modifier.padding(20.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "Chọn nghĩa đúng của từ ",
-                            fontSize = 18.sp,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = "\"${currentQuestion.word}\"",
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
+            when {
+                isLoading -> {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
                     }
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = "Chọn định nghĩa phù hợp nhất dựa trên cách sử dụng chuẩn.",
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                 }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Options List
-            Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-            ) {
-                currentQuestion.options.forEachIndexed { index, option ->
-                    val isSelected = selectedOptionIndex == index
-                    val letter = ('A' + index).toString()
-                    
-                    Card(
-                        onClick = { selectedOptionIndex = index },
-                        shape = RoundedCornerShape(16.dp),
-                        border = BorderStroke(
-                            2.dp,
-                            if (isSelected) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
-                        ),
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.1f)
-                            else MaterialTheme.colorScheme.surfaceContainerLowest
-                        ),
+                errorMessage != null -> {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(errorMessage ?: "Đã xảy ra lỗi", color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Button(onClick = { navController.popBackStack() }) {
+                                Text("Quay lại")
+                            }
+                        }
+                    }
+                }
+                questions.isEmpty() -> {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("Không có câu hỏi nào.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                currentQuestion != null -> {
+                    // Progress Section
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Câu ${currentQuestionIndex + 1} / ${questions.size}",
+                                fontSize = 14.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = "${((currentQuestionIndex + 1).toFloat() / questions.size * 100).toInt()}%",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+
+                        LinearProgressIndicator(
+                            progress = (currentQuestionIndex + 1).toFloat() / questions.size,
+                            color = MaterialTheme.colorScheme.secondary,
+                            trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                            strokeCap = StrokeCap.Round,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                                .height(10.dp)
+                                .clip(RoundedCornerShape(5.dp))
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    // Question Card
+                    Card(
+                        shape = RoundedCornerShape(24.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(
+                                1.dp,
+                                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
+                                RoundedCornerShape(24.dp)
+                            )
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(20.dp)
                         ) {
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(CircleShape)
-                                    .background(
-                                        if (isSelected) MaterialTheme.colorScheme.primary
-                                        else MaterialTheme.colorScheme.surfaceVariant
-                                    )
-                            ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    text = letter,
-                                    fontSize = 15.sp,
+                                    text = "Chọn nghĩa đúng của từ ",
+                                    fontSize = 18.sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "\"${currentQuestion.word.term}\"",
+                                    fontSize = 20.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = MaterialTheme.colorScheme.primary
                                 )
                             }
-                            
+                            Spacer(modifier = Modifier.height(6.dp))
                             Text(
-                                text = option,
-                                fontSize = 15.sp,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.weight(1f)
+                                text = "Chọn định nghĩa phù hợp nhất dựa trên cách sử dụng chuẩn.",
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
-                }
-            }
 
-            // Bottom Actions
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                // Bỏ qua button
-                Button(
-                    onClick = {
-                        // Skip and go to next
-                        selectedOptionIndex = null
-                        if (currentQuestionIndex < questions.size - 1) {
-                            currentQuestionIndex++
-                        } else {
-                            // Finish quiz
-                            val elapsed = String.format("%02d:%02d", (165 - timeLeft) / 60, (165 - timeLeft) % 60)
-                            navController.navigate(Screen.QuizResult.createRoute(correctAnswersCount, questions.size, elapsed)) {
-                                popUpTo(Screen.QuizQuestion.route) { inclusive = true }
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    // Options List
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                    ) {
+                        currentQuestion.options.forEachIndexed { index, option ->
+                            val isSelected = selectedOptionIndex == index
+                            val letter = ('A' + index).toString()
+                            
+                            Card(
+                                onClick = { if (!isAnswering) selectedOptionIndex = index },
+                                shape = RoundedCornerShape(16.dp),
+                                border = BorderStroke(
+                                    2.dp,
+                                    if (isSelected) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                                ),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.1f)
+                                    else MaterialTheme.colorScheme.surfaceContainerLowest
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                                ) {
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .clip(CircleShape)
+                                            .background(
+                                                if (isSelected) MaterialTheme.colorScheme.primary
+                                                else MaterialTheme.colorScheme.surfaceVariant
+                                            )
+                                    ) {
+                                        Text(
+                                            text = letter,
+                                            fontSize = 15.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    
+                                    Text(
+                                        text = option,
+                                        fontSize = 15.sp,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
                             }
                         }
-                    },
-                    shape = RoundedCornerShape(20.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor = MaterialTheme.colorScheme.primary
-                    ),
-                    modifier = Modifier.height(48.dp)
-                ) {
-                    Text("Bỏ qua", fontWeight = FontWeight.Bold)
-                }
+                    }
 
-                // Gửi câu trả lời button
-                Button(
-                    onClick = {
-                        if (selectedOptionIndex == currentQuestion.correctIndex) {
-                            correctAnswersCount++
+                    // Bottom Actions
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                if (isAnswering) return@Button
+                                selectedOptionIndex = null
+                                
+                                if (currentQuestionIndex < questions.size - 1) {
+                                    currentQuestionIndex++
+                                } else {
+                                    if (!isResultSubmitted) {
+                                        isResultSubmitted = true
+                                        val timeSpent = 165 - timeLeft
+                                        coroutineScope.launch {
+                                            repository.submitQuizResult(setId ?: "global", correctAnswersCount, questions.size, timeSpent)
+                                            val elapsed = String.format("%02d:%02d", timeSpent / 60, timeSpent % 60)
+                                            navController.navigate(Screen.QuizResult.createRoute(correctAnswersCount, questions.size, elapsed)) {
+                                                popUpTo(Screen.QuizQuestion.route) { inclusive = true }
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            enabled = !isAnswering,
+                            shape = RoundedCornerShape(20.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                contentColor = MaterialTheme.colorScheme.primary
+                            ),
+                            modifier = Modifier.height(48.dp)
+                        ) {
+                            Text("Bỏ qua", fontWeight = FontWeight.Bold)
                         }
-                        
-                        selectedOptionIndex = null
-                        
-                        if (currentQuestionIndex < questions.size - 1) {
-                            currentQuestionIndex++
-                        } else {
-                            // Finish quiz, navigate to Result
-                            val elapsed = String.format("%02d:%02d", (165 - timeLeft) / 60, (165 - timeLeft) % 60)
-                            navController.navigate(Screen.QuizResult.createRoute(correctAnswersCount, questions.size, elapsed)) {
-                                popUpTo(Screen.QuizQuestion.route) { inclusive = true }
+
+                        Button(
+                            onClick = {
+                                if (isAnswering || selectedOptionIndex == null) return@Button
+                                isAnswering = true
+                                val isCorrect = selectedOptionIndex == currentQuestion.correctIndex
+                                if (isCorrect) {
+                                    correctAnswersCount++
+                                }
+                                
+                                val word = currentQuestion.word
+                                coroutineScope.launch {
+                                    try {
+                                        repository.submitQuizAnswer(word.setId, word.id, isCorrect)
+                                    } catch (e: Exception) {
+                                        // Ignore
+                                    } finally {
+                                        selectedOptionIndex = null
+                                        isAnswering = false
+                                        if (currentQuestionIndex < questions.size - 1) {
+                                            currentQuestionIndex++
+                                        } else {
+                                            if (!isResultSubmitted) {
+                                                isResultSubmitted = true
+                                                val timeSpent = 165 - timeLeft
+                                                repository.submitQuizResult(setId ?: "global", correctAnswersCount, questions.size, timeSpent)
+                                                val elapsed = String.format("%02d:%02d", timeSpent / 60, timeSpent % 60)
+                                                navController.navigate(Screen.QuizResult.createRoute(correctAnswersCount, questions.size, elapsed)) {
+                                                    popUpTo(Screen.QuizQuestion.route) { inclusive = true }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            enabled = selectedOptionIndex != null && !isAnswering,
+                            shape = RoundedCornerShape(20.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp)
+                        ) {
+                            if (isAnswering) {
+                                CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary)
+                            } else {
+                                Text("Gửi câu trả lời", fontWeight = FontWeight.Bold)
                             }
                         }
-                    },
-                    enabled = selectedOptionIndex != null,
-                    shape = RoundedCornerShape(20.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(48.dp)
-                ) {
-                    Text("Gửi câu trả lời", fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }

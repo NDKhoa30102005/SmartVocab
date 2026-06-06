@@ -10,6 +10,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.Style
+import androidx.compose.material.icons.filled.Assignment
 import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material3.*
@@ -160,6 +162,35 @@ fun VocabSetDetailScreen(
                 )
             }
 
+            // Quick Study Buttons
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Button(
+                    onClick = { navController.navigate(Screen.FlashcardLearning.createRoute(currentSet.id)) },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.Style, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Thẻ ghi nhớ", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                }
+
+                Button(
+                    onClick = { navController.navigate(Screen.QuizQuestion.createRoute(currentSet.id)) },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.Assignment, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Làm Quiz", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                }
+            }
             // Divider
             Divider(
                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),

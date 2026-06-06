@@ -10,6 +10,9 @@ import com.example.smartvocab.data.model.LearningSettings
 import com.example.smartvocab.data.Achievement
 import com.example.smartvocab.data.repository.ProgressRepository
 import com.google.firebase.auth.FirebaseAuth
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
 import kotlinx.coroutines.launch
 
 /**
@@ -40,6 +43,41 @@ class ProgressViewModel(
 
     private val _achievements = mutableStateOf<List<Achievement>>(emptyList())
     val achievements: State<List<Achievement>> = _achievements
+
+    private val _selectedPeriod = mutableStateOf(7)
+    val selectedPeriod: State<Int> = _selectedPeriod
+
+    fun setSelectedPeriod(days: Int) {
+        _selectedPeriod.value = days
+    }
+
+    val chartActivities: List<DailyActivity>
+        get() {
+            val all = _dailyActivities.value
+            val days = _selectedPeriod.value
+            val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+            
+            // Generate last N dates in chronological order
+            val dates = (0 until days).map { i ->
+                val cal = Calendar.getInstance()
+                cal.add(Calendar.DATE, -i)
+                sdf.format(cal.time)
+            }.reversed()
+            
+            val activityMap = all.associateBy { it.date }
+            
+            return dates.map { dateStr ->
+                activityMap[dateStr] ?: DailyActivity(
+                    date = dateStr,
+                    userId = userId,
+                    learnedWords = 0,
+                    reviewedWords = 0,
+                    totalAnswers = 0,
+                    correctAnswers = 0,
+                    wrongAnswers = 0
+                )
+            }
+        }
 
     val hasLearningData: Boolean
         get() = _progressSummary.value.totalWordsLearned > 0 || _dailyActivities.value.isNotEmpty()

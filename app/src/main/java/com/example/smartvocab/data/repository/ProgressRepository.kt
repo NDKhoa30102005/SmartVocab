@@ -3,9 +3,15 @@ package com.example.smartvocab.data.repository
 import com.example.smartvocab.data.model.ProgressSummary
 import com.example.smartvocab.data.model.DailyActivity
 import com.example.smartvocab.data.model.LearningSettings
+import com.example.smartvocab.data.model.LearningProgress
+import com.example.smartvocab.data.model.ReviewLog
 import com.example.smartvocab.data.Achievement
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.Timestamp
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 
 /**
  * Lớp Repository kết nối trực tiếp với Firebase Firestore để xử lý các dữ liệu liên quan đến tiến trình học.
@@ -13,6 +19,183 @@ import com.google.firebase.Timestamp
  */
 class ProgressRepository {
     private val firestore = FirebaseFirestore.getInstance()
+
+    /**
+     * Helper tính chuỗi streak liên tiếp từ danh sách các ngày học yyyy-MM-dd
+     */
+    fun calculateStreak(activeDates: List<String>): Int {
+        if (activeDates.isEmpty()) return 0
+        
+        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        val parsedDates = activeDates.mapNotNull { 
+            try { sdf.parse(it) } catch(e: Exception) { null } 
+        }.distinct().sortedDescending()
+        
+        if (parsedDates.isEmpty()) return 0
+        
+        val today = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.time
+
+        val yesterday = Calendar.getInstance().apply {
+            add(Calendar.DATE, -1)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.time
+        
+        val firstDate = parsedDates[0]
+        val daysDiffToday = ((today.time - firstDate.time) / (1000 * 60 * 60 * 24)).toInt()
+        
+        if (daysDiffToday > 1) {
+            return 0
+        }
+        
+        var streak = 1
+        var currentDate = firstDate
+        
+        for (i in 1 until parsedDates.size) {
+            val nextDate = parsedDates[i]
+            val diffInDays = ((currentDate.time - nextDate.time) / (1000 * 60 * 60 * 24)).toInt()
+            if (diffInDays == 1) {
+                streak++
+                currentDate = nextDate
+            } else if (diffInDays > 1) {
+                break
+            }
+        }
+        return streak
+    }
+
+    /**
+     * Cập nhật thành tựu dựa trên dữ liệu thật của người dùng
+     */
+    suspend fun updateAchievements(userId: String) {
+        try {
+            val setsSnapshot = firestore.collection("vocabulary_sets")
+                .whereEqualTo("userId", userId)
+                .get()
+                .await()
+            val customSetsCount = setsSnapshot.size()
+            val firstSetUnlocked = customSetsCount >= 1
+            
+            val dailyPlansSnapshot = firestore.collection("daily_learning_plans")
+                .whereEqualTo("userId", userId)
+                .get()
+                .await()
+            val activeDates = dailyPlansSnapshot.documents.filter { doc ->
+                val learned = doc.getLong("learnedWords") ?: 0L
+                val reviewed = doc.getLong("reviewedWords") ?: 0L
+                val answers = doc.getLong("totalAnswers") ?: 0L
+                learned > 0L || reviewed > 0L || answers > 0L
+            }.mapNotNull { it.getString("date") }
+            val streak = calculateStreak(activeDates)
+            
+            val progressSnapshot = firestore.collection("learning_progress")
+                .whereEqualTo("userId", userId)
+                .whereEqualTo("status", "MASTERED")
+                .get()
+                .await()
+            val masteredCount = progressSnapshot.size()
+            
+            val practiceResultsSnapshot = firestore.collection("practice_results")
+                .whereEqualTo("userId", userId)
+                .get()
+                .await()
+            val hasPerfectQuiz = practiceResultsSnapshot.documents.any { doc ->
+                val score = doc.getLong("score") ?: 0L
+                val total = doc.getLong("totalQuestions") ?: 0L
+                score > 0L && score == total
+            }
+            
+            val maxLearnedInDay = dailyPlansSnapshot.documents.mapNotNull { it.getLong("learnedWords")?.toInt() }.maxOrNull() ?: 0
+            val speedLearnerUnlocked = maxLearnedInDay >= 50
+            
+            val batch = firestore.batch()
+            
+            val list = listOf(
+                Achievement(
+                    id = "first_set",
+                    title = "Nhà sáng tạo",
+                    description = "Mở khóa khi tạo ít nhất một bộ từ vựng cá nhân",
+                    icon = "workspace_premium",
+                    progress = if (firstSetUnlocked) 1f else 0f,
+                    currentVal = customSetsCount,
+                    targetVal = 1,
+                    isUnlocked = firstSetUnlocked,
+                    userId = userId
+                ),
+                Achievement(
+                    id = "streak_7",
+                    title = "Bền bỉ 7 ngày",
+                    description = "Đạt chuỗi học tập liên tiếp 7 ngày",
+                    icon = "local_fire_department",
+                    progress = (streak.toFloat() / 7f).coerceIn(0f, 1f),
+                    currentVal = streak,
+                    targetVal = 7,
+                    isUnlocked = streak >= 7,
+                    userId = userId
+                ),
+                Achievement(
+                    id = "streak_30",
+                    title = "Chăm chỉ 30 ngày",
+                    description = "Đạt chuỗi học tập liên tiếp 30 ngày",
+                    icon = "emoji_events",
+                    progress = (streak.toFloat() / 30f).coerceIn(0f, 1f),
+                    currentVal = streak,
+                    targetVal = 30,
+                    isUnlocked = streak >= 30,
+                    userId = userId
+                ),
+                Achievement(
+                    id = "word_master",
+                    title = "Vua từ vựng",
+                    description = "Học và làm chủ 300 từ",
+                    icon = "workspace_premium",
+                    progress = (masteredCount.toFloat() / 300f).coerceIn(0f, 1f),
+                    currentVal = masteredCount,
+                    targetVal = 300,
+                    isUnlocked = masteredCount >= 300,
+                    userId = userId
+                ),
+                Achievement(
+                    id = "perfect_quiz",
+                    title = "Bách phát bách trúng",
+                    description = "Đạt độ chính xác 100% trong bài trắc nghiệm",
+                    icon = "task_alt",
+                    progress = if (hasPerfectQuiz) 1f else 0f,
+                    currentVal = if (hasPerfectQuiz) 1 else 0,
+                    targetVal = 1,
+                    isUnlocked = hasPerfectQuiz,
+                    userId = userId
+                ),
+                Achievement(
+                    id = "speed_learner",
+                    title = "Học siêu tốc",
+                    description = "Học từ mới nhiều hơn hoặc bằng 50 từ trong một ngày",
+                    icon = "bolt",
+                    progress = (maxLearnedInDay.toFloat() / 50f).coerceIn(0f, 1f),
+                    currentVal = maxLearnedInDay,
+                    targetVal = 50,
+                    isUnlocked = speedLearnerUnlocked,
+                    userId = userId
+                )
+            )
+            
+            for (ach in list) {
+                val docRef = firestore.collection("achievements").document("${userId}_${ach.id}")
+                batch.set(docRef, ach)
+            }
+            
+            batch.commit().await()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
 
     /**
      * Lấy tên người dùng từ Firestore để hiển thị lời chào cá nhân hóa.
@@ -32,16 +215,17 @@ class ProgressRepository {
      */
     suspend fun getProgressSummary(userId: String): ProgressSummary {
         return try {
-            // 1. Lấy dữ liệu từ learning_progress
             val progressSnapshot = firestore.collection("learning_progress")
                 .whereEqualTo("userId", userId)
                 .get()
                 .await()
 
-            val totalWordsLearned = progressSnapshot.size()
+            val learningProgressList = progressSnapshot.documents.mapNotNull { doc ->
+                doc.toObject(LearningProgress::class.java)?.copy(id = doc.id)
+            }
+            val totalWordsLearned = learningProgressList.count { it.status != "NEW" || it.repetitionCount > 0 }
 
             if (totalWordsLearned == 0) {
-                // Trả về mặc định khi chưa có dữ liệu học tập
                 return ProgressSummary(
                     totalWordsLearned = 0,
                     masteredWords = 0,
@@ -54,20 +238,13 @@ class ProgressRepository {
                 )
             }
 
-            // 2. Tính số từ đã làm chủ (status = "MASTERED")
-            val masteredWords = progressSnapshot.documents.count { doc ->
-                doc.getString("status") == "MASTERED"
-            }
+            val masteredWords = learningProgressList.count { it.status == "MASTERED" }
 
-            // 3. Tính số từ cần ôn tập (status = "REVIEW" hoặc nextReviewDate <= ngày hiện tại)
             val now = Timestamp.now()
-            val reviewDueWords = progressSnapshot.documents.count { doc ->
-                val status = doc.getString("status")
-                val nextReviewDate = doc.getTimestamp("nextReviewDate")
-                status == "REVIEW" || (nextReviewDate != null && nextReviewDate.seconds <= now.seconds)
+            val reviewDueWords = learningProgressList.count { 
+                it.status == "REVIEW" && it.nextReviewDate != null && it.nextReviewDate.seconds <= now.seconds 
             }
 
-            // 4. Lấy dữ liệu từ daily_learning_plans để tính độ chính xác và số ngày streak
             val dailyPlansSnapshot = firestore.collection("daily_learning_plans")
                 .whereEqualTo("userId", userId)
                 .get()
@@ -76,38 +253,50 @@ class ProgressRepository {
             val totalCorrect = dailyPlansSnapshot.documents.sumOf { it.getLong("correctAnswers") ?: 0L }
             val totalAnswers = dailyPlansSnapshot.documents.sumOf { it.getLong("totalAnswers") ?: 0L }
             
-            // Độ chính xác = correctAnswers / totalAnswers * 100
             val accuracy = if (totalAnswers > 0) {
                 (totalCorrect.toDouble() / totalAnswers * 100)
             } else {
                 0.0
             }
 
-            // Tỷ lệ ghi nhớ = masteredWords / totalWordsLearned * 100
-            val retentionRate = if (totalWordsLearned > 0) {
-                (masteredWords.toDouble() / totalWordsLearned * 100)
+            val reviewLogsSnapshot = firestore.collection("review_logs")
+                .whereEqualTo("userId", userId)
+                .get()
+                .await()
+
+            val reviewLogs = reviewLogsSnapshot.documents.filter { doc ->
+                val activityType = doc.getString("activityType")
+                activityType == null || activityType == "REVIEW"
+            }
+            val totalReviews = reviewLogs.size
+            val goodEasyReviews = reviewLogs.count { doc ->
+                val rating = doc.getString("rating")
+                rating == "good" || rating == "easy"
+            }
+            val retentionRate = if (totalReviews > 0) {
+                (goodEasyReviews.toDouble() / totalReviews * 100)
             } else {
                 0.0
             }
 
-            // StreakDays tính theo số lượng ngày có hoạt động thực tế (learnedWords > 0 hoặc reviewedWords > 0)
-            val streakDays = dailyPlansSnapshot.documents.count { doc ->
+            val activeDates = dailyPlansSnapshot.documents.filter { doc ->
                 val learned = doc.getLong("learnedWords") ?: 0L
                 val reviewed = doc.getLong("reviewedWords") ?: 0L
-                learned > 0L || reviewed > 0L
-            }
+                val answers = doc.getLong("totalAnswers") ?: 0L
+                learned > 0L || reviewed > 0L || answers > 0L
+            }.mapNotNull { it.getString("date") }
+            val streakDays = calculateStreak(activeDates)
 
-            // Ước lượng trình độ
             val levelEstimate = when {
-                totalWordsLearned < 300 -> "Beginner"
-                totalWordsLearned <= 1000 -> "Intermediate"
-                else -> "Advanced"
+                totalWordsLearned >= 1000 && accuracy >= 80.0 -> "Advanced"
+                totalWordsLearned >= 300 && accuracy >= 60.0 -> "Intermediate"
+                else -> "Beginner"
             }
 
-            // Lấy ngày học cuối cùng từ kế hoạch hàng ngày
             val lastStudyDate = dailyPlansSnapshot.documents
                 .mapNotNull { it.getString("date") }
-                .lastOrNull() ?: ""
+                .sortedDescending()
+                .firstOrNull() ?: ""
 
             ProgressSummary(
                 totalWordsLearned = totalWordsLearned,
@@ -138,8 +327,9 @@ class ProgressRepository {
             if (snapshot.isEmpty) {
                 emptyList()
             } else {
-                snapshot.toObjects(DailyActivity::class.java)
-                    .sortedWith(compareBy { getDayOrder(it.date) })
+                snapshot.documents.mapNotNull { doc ->
+                    doc.toObject(DailyActivity::class.java)?.copy(id = doc.id)
+                }.sortedBy { it.date }
             }
         } catch (e: Exception) {
             emptyList()
@@ -198,7 +388,9 @@ class ProgressRepository {
             if (snapshot.isEmpty) {
                 emptyList()
             } else {
-                snapshot.toObjects(Achievement::class.java)
+                snapshot.documents.mapNotNull { doc ->
+                    doc.toObject(Achievement::class.java)?.copy(id = doc.id)
+                }
             }
         } catch (e: Exception) {
             emptyList()

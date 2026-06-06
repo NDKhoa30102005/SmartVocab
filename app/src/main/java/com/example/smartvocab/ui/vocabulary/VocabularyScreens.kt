@@ -24,6 +24,24 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.smartvocab.data.model.VocabularySet
 import com.example.smartvocab.data.model.VocabularyWord
+import com.google.firebase.Timestamp
+
+fun formatLastStudied(timestamp: Timestamp?): String {
+    val timeMs = timestamp?.seconds?.times(1000) ?: return "Chưa học"
+    val diff = System.currentTimeMillis() - timeMs
+    val seconds = diff / 1000
+    val minutes = seconds / 60
+    val hours = minutes / 60
+    val days = hours / 24
+
+    return when {
+        seconds < 60 -> "Học lần cuối: Vừa xong"
+        minutes < 60 -> "Học lần cuối: $minutes phút trước"
+        hours < 24 -> "Học lần cuối: $hours giờ trước"
+        days == 1L -> "Học lần cuối: Hôm qua"
+        else -> "Học lần cuối: $days ngày trước"
+    }
+}
 
 @Composable
 fun VocabularySetCard(
@@ -167,7 +185,7 @@ fun VocabularySetCard(
 
             // Last Studied Footer
             Text(
-                text = set.lastStudied,
+                text = formatLastStudied(set.lastStudiedAt),
                 fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.outline
             )

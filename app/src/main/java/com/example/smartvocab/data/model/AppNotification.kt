@@ -11,6 +11,8 @@ data class AppNotification(
     val title: String = "",             // Tiêu đề thông báo
     val message: String = "",           // Nội dung chi tiết
     val type: String = "SYSTEM",         // Loại thông báo ("REVIEW", "ACHIEVEMENT", "SYSTEM")
+    val actionRoute: String? = null,     // Đường dẫn điều hướng hành động
+    val relatedId: String? = null,       // Mã liên kết (ví dụ: setId, achievementId)
     @field:JvmField val isRead: Boolean = false, // Trạng thái đã đọc hay chưa
     val createdAt: Timestamp? = null     // Thời gian tạo từ Firestore Timestamp
 ) {

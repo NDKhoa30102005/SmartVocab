@@ -29,6 +29,41 @@ import com.example.smartvocab.data.model.DailyActivity
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.smartvocab.viewmodel.ProgressViewModel
 import com.example.smartvocab.ui.dashboard.getTodayDayOfWeek
+import androidx.compose.foundation.clickable
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
+
+fun getTodayDateString(): String {
+    val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+    return sdf.format(Calendar.getInstance().time)
+}
+
+fun getChartLabel(dateStr: String, period: Int): String {
+    if (period == 7) {
+        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        return try {
+            val date = sdf.parse(dateStr) ?: return dateStr
+            val cal = Calendar.getInstance()
+            cal.time = date
+            when (cal.get(Calendar.DAY_OF_WEEK)) {
+                Calendar.MONDAY -> "T2"
+                Calendar.TUESDAY -> "T3"
+                Calendar.WEDNESDAY -> "T4"
+                Calendar.THURSDAY -> "T5"
+                Calendar.FRIDAY -> "T6"
+                Calendar.SATURDAY -> "T7"
+                Calendar.SUNDAY -> "CN"
+                else -> dateStr
+            }
+        } catch (e: Exception) {
+            dateStr
+        }
+    } else {
+        val parts = dateStr.split("-")
+        return if (parts.size == 3) parts[2] else dateStr
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -41,6 +76,7 @@ fun StatisticsTab(
     val isLoading by viewModel.isLoading
     val errorMessage by viewModel.errorMessage
     val achievements by viewModel.achievements
+    val selectedPeriod by viewModel.selectedPeriod
 
     Column(
         modifier = Modifier
@@ -303,24 +339,32 @@ fun StatisticsTab(
                                 ) {
                                     Surface(
                                         shape = RoundedCornerShape(6.dp),
-                                        color = MaterialTheme.colorScheme.surfaceContainerLowest,
-                                        shadowElevation = 1.dp
+                                        color = if (selectedPeriod == 7) MaterialTheme.colorScheme.surfaceContainerLowest else Color.Transparent,
+                                        shadowElevation = if (selectedPeriod == 7) 1.dp else 0.dp,
+                                        modifier = Modifier.clickable { viewModel.setSelectedPeriod(7) }
                                     ) {
                                         Text(
                                             text = "7 Ngày",
                                             fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.primary,
+                                            fontWeight = if (selectedPeriod == 7) FontWeight.Bold else FontWeight.Medium,
+                                            color = if (selectedPeriod == 7) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                                         )
                                     }
-                                    Text(
-                                        text = "30 Ngày",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                    )
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = if (selectedPeriod == 30) MaterialTheme.colorScheme.surfaceContainerLowest else Color.Transparent,
+                                        shadowElevation = if (selectedPeriod == 30) 1.dp else 0.dp,
+                                        modifier = Modifier.clickable { viewModel.setSelectedPeriod(30) }
+                                    ) {
+                                        Text(
+                                            text = "30 Ngày",
+                                            fontSize = 11.sp,
+                                            fontWeight = if (selectedPeriod == 30) FontWeight.Bold else FontWeight.Medium,
+                                            color = if (selectedPeriod == 30) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -334,29 +378,18 @@ fun StatisticsTab(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.Bottom
                         ) {
-                            val chartActivities = if (activities.isEmpty()) {
-                                listOf(
-                                    DailyActivity(date = "T2"),
-                                    DailyActivity(date = "T3"),
-                                    DailyActivity(date = "T4"),
-                                    DailyActivity(date = "T5"),
-                                    DailyActivity(date = "T6"),
-                                    DailyActivity(date = "T7"),
-                                    DailyActivity(date = "CN")
-                                )
-                            } else {
-                                activities
-                            }
+                            val chartActivities = viewModel.chartActivities
                             val maxLearned = chartActivities.maxOfOrNull { it.learnedWords } ?: 0
                             val maxLearnedVal = if (maxLearned > 0) maxLearned else 1
-                            val todayDay = getTodayDayOfWeek()
+                            val todayDateStr = getTodayDateString()
                             val chartData = chartActivities.map { activity ->
                                 val percentage = if (maxLearnedVal > 0) activity.learnedWords.toFloat() / maxLearnedVal else 0f
+                                val label = getChartLabel(activity.date, selectedPeriod)
                                 ChartBar(
-                                    day = activity.date,
-                                    percentage = percentage.coerceIn(0.05f, 1f),
+                                    day = label,
+                                    percentage = if (percentage == 0f) 0f else percentage.coerceIn(0.05f, 1f),
                                     valueLabel = activity.learnedWords.toString(),
-                                    isActive = activity.date == todayDay
+                                    isActive = activity.date == todayDateStr
                                 )
                             }
 
@@ -364,20 +397,33 @@ fun StatisticsTab(
                                 Column(
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     verticalArrangement = Arrangement.Bottom,
-                                    modifier = Modifier.weight(1f)
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxHeight()
                                 ) {
                                     // Value above bar
-                                    Text(
-                                        text = bar.valueLabel,
-                                        fontSize = 11.sp,
-                                        fontWeight = if (bar.isActive) FontWeight.Bold else FontWeight.Normal,
-                                        color = if (bar.isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                                    if (selectedPeriod == 7 && bar.valueLabel != "0") {
+                                        Text(
+                                            text = bar.valueLabel,
+                                            fontSize = 11.sp,
+                                            fontWeight = if (bar.isActive) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (bar.isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    } else if (selectedPeriod == 30 && bar.valueLabel != "0") {
+                                        Text(
+                                            text = bar.valueLabel,
+                                            fontSize = 8.sp,
+                                            fontWeight = if (bar.isActive) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (bar.isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    } else {
+                                        Spacer(modifier = Modifier.height(14.dp))
+                                    }
                                     Spacer(modifier = Modifier.height(4.dp))
                                     // Bar Column representation
                                     Box(
                                         modifier = Modifier
-                                            .width(16.dp)
+                                            .width(if (selectedPeriod == 30) 6.dp else 16.dp)
                                             .fillMaxHeight(bar.percentage)
                                             .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
                                             .background(
@@ -387,9 +433,10 @@ fun StatisticsTab(
                                     )
                                     Spacer(modifier = Modifier.height(8.dp))
                                     // Day label below
+                                    val showLabel = selectedPeriod == 7 || bar.day.toIntOrNull()?.let { it % 5 == 0 || it == 1 } ?: true
                                     Text(
-                                        text = bar.day,
-                                        fontSize = 12.sp,
+                                        text = if (showLabel) bar.day else "",
+                                        fontSize = if (selectedPeriod == 30) 9.sp else 12.sp,
                                         fontWeight = if (bar.isActive) FontWeight.Bold else FontWeight.Medium,
                                         color = if (bar.isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                                     )

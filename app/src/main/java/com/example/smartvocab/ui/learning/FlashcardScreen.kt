@@ -37,10 +37,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import com.example.smartvocab.data.model.VocabularyWord
+import com.example.smartvocab.data.model.LearningProgress
 import com.example.smartvocab.data.repository.FirestoreVocabularyRepository
 import com.example.smartvocab.data.repository.VocabularyRepository
 import kotlinx.coroutines.launch
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.Timestamp
 import androidx.compose.runtime.saveable.rememberSaveable
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -58,15 +61,38 @@ fun FlashcardScreen(navController: NavHostController, setId: String?) {
     LaunchedEffect(setId, reloadTrigger) {
         isLoading = true
         errorMessage = null
+        val userId = FirebaseAuth.getInstance().currentUser?.uid ?: ""
         if (setId.isNullOrBlank() || setId == "null") {
-            FirebaseFirestore.getInstance().collection("vocabulary_words")
+            val now = Timestamp.now()
+            FirebaseFirestore.getInstance().collection("learning_progress")
+                .whereEqualTo("userId", userId)
+                .whereEqualTo("status", "REVIEW")
                 .get()
-                .addOnSuccessListener { snapshot ->
-                    words = snapshot.toObjects(VocabularyWord::class.java).sortedBy { it.createdAt }
-                    isLoading = false
+                .addOnSuccessListener { progressSnapshot ->
+                    val dueWordIds = progressSnapshot.documents.filter { doc ->
+                        val nextDate = doc.getTimestamp("nextReviewDate")
+                        nextDate != null && nextDate.seconds <= now.seconds
+                    }.mapNotNull { doc -> doc.getString("wordId") }
+                    
+                    if (dueWordIds.isEmpty()) {
+                        words = emptyList()
+                        isLoading = false
+                    } else {
+                        FirebaseFirestore.getInstance().collection("vocabulary_words")
+                            .get()
+                            .addOnSuccessListener { wordsSnapshot ->
+                                val allWords = wordsSnapshot.toObjects(VocabularyWord::class.java)
+                                words = allWords.filter { it.id in dueWordIds }.sortedBy { it.createdAt }
+                                isLoading = false
+                            }
+                            .addOnFailureListener { exception ->
+                                errorMessage = "Lỗi khi tải từ vựng: ${exception.localizedMessage}"
+                                isLoading = false
+                            }
+                    }
                 }
                 .addOnFailureListener { exception ->
-                    errorMessage = "Lỗi khi tải dữ liệu: ${exception.localizedMessage}"
+                    errorMessage = "Lỗi khi tải tiến trình: ${exception.localizedMessage}"
                     isLoading = false
                 }
         } else {
@@ -86,6 +112,7 @@ fun FlashcardScreen(navController: NavHostController, setId: String?) {
     var isFlipped by rememberSaveable { mutableStateOf(false) }
     var againCount by rememberSaveable { mutableStateOf(0) }
     var goodCount by rememberSaveable { mutableStateOf(0) }
+    var isSubmitting by remember { mutableStateOf(false) }
 
     val currentWord = words.getOrNull(currentIndex)
     val isFinished = !isLoading && errorMessage == null && words.isNotEmpty() && currentIndex >= words.size
@@ -96,14 +123,21 @@ fun FlashcardScreen(navController: NavHostController, setId: String?) {
         label = "flipAnimation"
     )
 
-    fun handleAnswer(isGood: Boolean) {
-        val word = currentWord
-        if (word != null && !setId.isNullOrBlank() && setId != "null") {
-            coroutineScope.launch {
-                repository.toggleWordLearned(setId, word.id, isGood)
+    fun handleAnswer(rating: String) {
+        if (isSubmitting) return
+        val word = currentWord ?: return
+        isSubmitting = true
+        coroutineScope.launch {
+            try {
+                repository.updateFlashcardProgress(word.setId, word.id, rating)
+            } catch (e: Exception) {
+                // Ignore or log error
+            } finally {
+                isSubmitting = false
             }
         }
-        if (isGood) goodCount++ else againCount++
+        val isCorrect = rating == "good" || rating == "easy"
+        if (isCorrect) goodCount++ else againCount++
         isFlipped = false
         currentIndex++
     }
@@ -423,7 +457,7 @@ fun FlashcardScreen(navController: NavHostController, setId: String?) {
                     ) {
                         // Again
                         Card(
-                            onClick = { handleAnswer(false) },
+                            onClick = { handleAnswer("again") },
                             shape = RoundedCornerShape(12.dp),
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f)),
                             modifier = Modifier.weight(1f)
@@ -451,7 +485,7 @@ fun FlashcardScreen(navController: NavHostController, setId: String?) {
 
                         // Hard
                         Card(
-                            onClick = { handleAnswer(false) },
+                            onClick = { handleAnswer("hard") },
                             shape = RoundedCornerShape(12.dp),
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.2f)),
                             modifier = Modifier.weight(1f)
@@ -479,7 +513,7 @@ fun FlashcardScreen(navController: NavHostController, setId: String?) {
 
                         // Good
                         Card(
-                            onClick = { handleAnswer(true) },
+                            onClick = { handleAnswer("good") },
                             shape = RoundedCornerShape(12.dp),
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.2f)),
                             modifier = Modifier.weight(1f)
@@ -507,7 +541,7 @@ fun FlashcardScreen(navController: NavHostController, setId: String?) {
 
                         // Easy
                         Card(
-                            onClick = { handleAnswer(true) },
+                            onClick = { handleAnswer("easy") },
                             shape = RoundedCornerShape(12.dp),
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.1f)),
                             modifier = Modifier.weight(1f)

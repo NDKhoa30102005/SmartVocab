@@ -98,8 +98,8 @@ fun DashboardTab(
     val errorMessage by progressViewModel.errorMessage
     val userName by progressViewModel.userName
 
-    // Tính toán tiến trình mục tiêu ngày dựa trên hoạt động hôm nay
-    val todayActivity = activities.find { it.date == getTodayDayOfWeek() }
+    val todayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Calendar.getInstance().time)
+    val todayActivity = activities.find { it.date == todayStr }
     val learnedToday = todayActivity?.learnedWords ?: 0
     val dailyGoal = settings.newWordsPerDay
     val progressPercent = if (dailyGoal > 0) learnedToday.toFloat() / dailyGoal else 0f

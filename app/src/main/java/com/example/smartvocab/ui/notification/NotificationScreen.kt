@@ -163,6 +163,9 @@ fun NotificationScreen(
                                 onDelete = { deleteNotification(notification.id) },
                                 onCardClick = {
                                     viewModel.markAsRead(notification.id)
+                                    if (notification.type == "REVIEW") {
+                                        navController.navigate(Screen.FlashcardLearning.createRoute())
+                                    }
                                 },
                                 onActionClick = {
                                     viewModel.markAsRead(notification.id)

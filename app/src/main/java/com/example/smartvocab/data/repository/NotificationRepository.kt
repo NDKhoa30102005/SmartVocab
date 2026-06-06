@@ -22,7 +22,9 @@ class NotificationRepository {
                 .orderBy("createdAt", Query.Direction.DESCENDING)
                 .get()
                 .await()
-            snapshot.toObjects(AppNotification::class.java)
+            snapshot.documents.mapNotNull { doc ->
+                doc.toObject(AppNotification::class.java)?.copy(id = doc.id)
+            }
         } catch (e: Exception) {
             // Trường hợp chưa tạo index Firestore cho orderBy, thực hiện sắp xếp cục bộ để tránh lỗi truy vấn
             try {
@@ -30,8 +32,9 @@ class NotificationRepository {
                     .whereEqualTo("userId", userId)
                     .get()
                     .await()
-                snapshot.toObjects(AppNotification::class.java)
-                    .sortedByDescending { it.createdAt }
+                snapshot.documents.mapNotNull { doc ->
+                    doc.toObject(AppNotification::class.java)?.copy(id = doc.id)
+                }.sortedByDescending { it.createdAt }
             } catch (ex: Exception) {
                 emptyList()
             }

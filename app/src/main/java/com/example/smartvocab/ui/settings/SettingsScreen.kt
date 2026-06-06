@@ -46,6 +46,8 @@ fun SettingsTab(
     var newWordsCount by remember { mutableStateOf(10f) }
     var reviewWordsCount by remember { mutableStateOf(20f) }
     var dailyReminderTime by remember { mutableStateOf("20:00") }
+    var dailyReminderEnabled by remember { mutableStateOf(true) }
+    var dueReviewReminderEnabled by remember { mutableStateOf(true) }
     var pushEnabled by remember { mutableStateOf(true) }
     var emailEnabled by remember { mutableStateOf(false) }
 
@@ -54,6 +56,8 @@ fun SettingsTab(
         newWordsCount = settings.newWordsPerDay.toFloat()
         reviewWordsCount = settings.reviewWordsPerDay.toFloat()
         dailyReminderTime = settings.reminderTime
+        dailyReminderEnabled = settings.dailyReminderEnabled
+        dueReviewReminderEnabled = settings.dueReviewReminderEnabled
         pushEnabled = settings.pushNotificationEnabled
         emailEnabled = settings.emailNotificationEnabled
     }
@@ -281,6 +285,31 @@ fun SettingsTab(
                 title = "Cấu hình thông báo",
                 icon = Icons.Default.Notifications
             ) {
+                // Nhắc nhở học hàng ngày Switch
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Nhắc nhở học hàng ngày",
+                        fontSize = 15.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Switch(
+                        checked = dailyReminderEnabled,
+                        onCheckedChange = { dailyReminderEnabled = it },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = MaterialTheme.colorScheme.primary
+                        )
+                    )
+                }
+
+                Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+
                 // Reminder time selection
                 Row(
                     modifier = Modifier
@@ -304,7 +333,7 @@ fun SettingsTab(
                             modifier = Modifier.size(20.dp)
                         )
                         Text(
-                            text = "Nhắc nhở hàng ngày",
+                            text = "Giờ nhắc nhở học",
                             fontSize = 15.sp,
                             color = MaterialTheme.colorScheme.onSurface
                         )
@@ -314,6 +343,31 @@ fun SettingsTab(
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
+                    )
+                }
+
+                Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+
+                // Nhắc nhở từ đến hạn ôn Switch
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Nhắc nhở từ đến hạn ôn",
+                        fontSize = 15.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Switch(
+                        checked = dueReviewReminderEnabled,
+                        onCheckedChange = { dueReviewReminderEnabled = it },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = MaterialTheme.colorScheme.primary
+                        )
                     )
                 }
 
@@ -375,11 +429,22 @@ fun SettingsTab(
                         newWordsPerDay = newWordsCount.toInt(),
                         reviewWordsPerDay = reviewWordsCount.toInt(),
                         reminderTime = dailyReminderTime,
+                        dailyReminderEnabled = dailyReminderEnabled,
+                        dueReviewReminderEnabled = dueReviewReminderEnabled,
                         pushNotificationEnabled = pushEnabled,
                         emailNotificationEnabled = emailEnabled
                     )
                     viewModel.updateSettings(newSettings) { success ->
                         if (success) {
+                            com.example.smartvocab.util.ReminderManager.scheduleDailyReminder(
+                                context,
+                                newSettings.reminderTime,
+                                newSettings.dailyReminderEnabled
+                            )
+                            com.example.smartvocab.util.ReminderManager.scheduleDueReviewReminder(
+                                context,
+                                newSettings.dueReviewReminderEnabled
+                            )
                             Toast.makeText(context, "Đã lưu cài đặt thành công!", Toast.LENGTH_SHORT).show()
                         } else {
                             Toast.makeText(context, "Lưu cài đặt thất bại!", Toast.LENGTH_SHORT).show()

@@ -73,4 +73,7 @@ dependencies {
     // JavaMail for sending OTP emails
     implementation("com.sun.mail:android-mail:1.6.7")
     implementation("com.sun.mail:android-activation:1.6.7")
+    // WorkManager for background study/review reminders
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
+    implementation("com.google.firebase:firebase-messaging")
 }

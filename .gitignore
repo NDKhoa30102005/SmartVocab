@@ -13,3 +13,8 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# Firebase Admin SDK credentials and Firestore exports
+serviceAccountKey.json
+*-firebase-adminsdk-*.json
+firestore-export*.json

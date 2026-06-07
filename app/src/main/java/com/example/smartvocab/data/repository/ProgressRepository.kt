@@ -49,7 +49,7 @@ class ProgressRepository {
         }.time
         
         val firstDate = parsedDates[0]
-        val daysDiffToday = ((today.time - firstDate.time) / (1000 * 60 * 60 * 24)).toInt()
+        val daysDiffToday = Math.round((today.time - firstDate.time).toDouble() / (1000 * 60 * 60 * 24)).toInt()
         
         if (daysDiffToday > 1) {
             return 0
@@ -60,7 +60,7 @@ class ProgressRepository {
         
         for (i in 1 until parsedDates.size) {
             val nextDate = parsedDates[i]
-            val diffInDays = ((currentDate.time - nextDate.time) / (1000 * 60 * 60 * 24)).toInt()
+            val diffInDays = Math.round((currentDate.time - nextDate.time).toDouble() / (1000 * 60 * 60 * 24)).toInt()
             if (diffInDays == 1) {
                 streak++
                 currentDate = nextDate
@@ -340,15 +340,14 @@ class ProgressRepository {
      */
     suspend fun getLearningSettings(userId: String): LearningSettings {
         return try {
-            val query = firestore.collection("user_settings")
-                .whereEqualTo("userId", userId)
-                .limit(1)
+            val doc = firestore.collection("user_settings")
+                .document(userId)
                 .get()
                 .await()
-            if (query.isEmpty) {
-                LearningSettings(userId = userId)
+            if (doc.exists()) {
+                doc.toObject(LearningSettings::class.java) ?: LearningSettings(userId = userId)
             } else {
-                query.documents.first().toObject(LearningSettings::class.java) ?: LearningSettings(userId = userId)
+                LearningSettings(userId = userId)
             }
         } catch (e: Exception) {
             LearningSettings(userId = userId)
@@ -359,18 +358,8 @@ class ProgressRepository {
      * Cập nhật cấu hình cài đặt của người dùng lên collection top-level user_settings.
      */
     suspend fun updateLearningSettings(userId: String, settings: LearningSettings): Result<Unit> = runCatching {
-        val query = firestore.collection("user_settings")
-            .whereEqualTo("userId", userId)
-            .get()
-            .await()
-        
-        val docRef = if (!query.isEmpty) {
-            query.documents.first().reference
-        } else {
-            firestore.collection("user_settings").document()
-        }
-        
-        val finalSettings = settings.copy(id = docRef.id, userId = userId)
+        val docRef = firestore.collection("user_settings").document(userId)
+        val finalSettings = settings.copy(id = userId, userId = userId)
         docRef.set(finalSettings).await()
     }
 

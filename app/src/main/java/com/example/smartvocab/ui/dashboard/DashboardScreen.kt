@@ -98,6 +98,10 @@ fun DashboardTab(
     val errorMessage by progressViewModel.errorMessage
     val userName by progressViewModel.userName
 
+    LaunchedEffect(Unit) {
+        progressViewModel.loadProgress()
+    }
+
     val todayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Calendar.getInstance().time)
     val todayActivity = activities.find { it.date == todayStr }
     val learnedToday = todayActivity?.learnedWords ?: 0

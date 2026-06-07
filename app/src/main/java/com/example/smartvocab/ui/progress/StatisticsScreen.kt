@@ -78,6 +78,10 @@ fun StatisticsTab(
     val achievements by viewModel.achievements
     val selectedPeriod by viewModel.selectedPeriod
 
+    LaunchedEffect(Unit) {
+        viewModel.loadProgress()
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()

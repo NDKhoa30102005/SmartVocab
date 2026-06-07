@@ -37,13 +37,9 @@ class DailyReminderWorker(val context: Context, params: WorkerParameters) : Coro
         val userId = auth.currentUser?.uid ?: return Result.success()
         
         val db = FirebaseFirestore.getInstance()
-        val query = db.collection("user_settings")
-            .whereEqualTo("userId", userId)
-            .get()
-            .await()
-            
-        val settings = if (!query.isEmpty) {
-            query.documents.first().toObject(LearningSettings::class.java)
+        val doc = db.collection("user_settings").document(userId).get().await()
+        val settings = if (doc.exists()) {
+            doc.toObject(LearningSettings::class.java)
         } else {
             LearningSettings(userId = userId)
         }
@@ -69,13 +65,9 @@ class DueReviewReminderWorker(val context: Context, params: WorkerParameters) : 
         val userId = auth.currentUser?.uid ?: return Result.success()
         
         val db = FirebaseFirestore.getInstance()
-        val query = db.collection("user_settings")
-            .whereEqualTo("userId", userId)
-            .get()
-            .await()
-            
-        val settings = if (!query.isEmpty) {
-            query.documents.first().toObject(LearningSettings::class.java)
+        val doc = db.collection("user_settings").document(userId).get().await()
+        val settings = if (doc.exists()) {
+            doc.toObject(LearningSettings::class.java)
         } else {
             LearningSettings(userId = userId)
         }

@@ -58,16 +58,16 @@ class FirestoreVocabularyRepository : VocabularyRepository {
 
     override fun getVocabularySets(userId: String): Flow<List<VocabularySet>> = callbackFlow {
         var setsList = emptyList<VocabularySet>()
-        var progressMap = emptyMap<String, LearningProgress>() // Key is setId
+        var progressList = emptyList<LearningProgress>()
 
         fun updateCombinedSets() {
+            val progressBySet = progressList.groupBy { it.setId }
             val combined = setsList.map { set ->
-                val progressDoc = progressMap[set.id]
-                val progressVal = progressDoc?.progressPercent ?: 0f
-                val lastStudiedVal = progressDoc?.updatedAt ?: set.lastStudiedAt
+                val setProgress = progressBySet[set.id] ?: emptyList()
+                val totalLearned = setProgress.count { it.status != "NEW" || it.repetitionCount > 0 }
+                val ratio = if (set.wordCount > 0) totalLearned.toFloat() / set.wordCount else 0f
                 set.copy(
-                    progress = progressVal.coerceIn(0f, 1f),
-                    lastStudiedAt = lastStudiedVal
+                    progress = ratio.coerceIn(0f, 1f)
                 )
             }
             trySend(combined)
@@ -95,9 +95,9 @@ class FirestoreVocabularyRepository : VocabularyRepository {
                     return@addSnapshotListener
                 }
                 if (snapshot != null) {
-                    progressMap = snapshot.documents.mapNotNull { doc ->
+                    progressList = snapshot.documents.mapNotNull { doc ->
                         doc.toObject(LearningProgress::class.java)?.copy(id = doc.id)
-                    }.associateBy { it.setId }
+                    }
                     updateCombinedSets()
                 }
             }
@@ -130,7 +130,6 @@ class FirestoreVocabularyRepository : VocabularyRepository {
     }
 
     override suspend fun deleteVocabularySet(setId: String): Result<Unit> = runCatching {
-        // Delete all words in this set first
         val wordsSnapshot = firestore.collection("vocabulary_words")
             .whereEqualTo("setId", setId)
             .get()
@@ -142,19 +141,19 @@ class FirestoreVocabularyRepository : VocabularyRepository {
         }
         batch.commit().await()
 
-        // Delete the set
         firestore.collection("vocabulary_sets").document(setId).delete().await()
     }
 
     override fun getWords(setId: String): Flow<List<VocabularyWord>> = callbackFlow {
         val userId = FirebaseAuth.getInstance().currentUser?.uid ?: ""
         var wordsList = emptyList<VocabularyWord>()
-        var progressDoc: LearningProgress? = null
+        var progressList = emptyList<LearningProgress>()
 
         fun updateCombinedList() {
-            val learnedIds = progressDoc?.learnedWordIds ?: emptyList()
+            val progressMap = progressList.associateBy { it.wordId }
             val combined = wordsList.map { word ->
-                val learned = word.id in learnedIds
+                val progressDoc = progressMap[word.id]
+                val learned = progressDoc?.let { it.status != "NEW" || it.repetitionCount > 0 } ?: false
                 word.copy(isLearned = learned)
             }
             trySend(combined)
@@ -175,19 +174,19 @@ class FirestoreVocabularyRepository : VocabularyRepository {
                 }
             }
 
-        val docId = "${userId}_$setId"
         val progressReg = firestore.collection("learning_progress")
-            .document(docId)
+            .whereEqualTo("userId", userId)
+            .whereEqualTo("setId", setId)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     return@addSnapshotListener
                 }
-                if (snapshot != null && snapshot.exists()) {
-                    progressDoc = snapshot.toObject(LearningProgress::class.java)?.copy(id = snapshot.id)
-                } else {
-                    progressDoc = null
+                if (snapshot != null) {
+                    progressList = snapshot.documents.mapNotNull { doc ->
+                        doc.toObject(LearningProgress::class.java)?.copy(id = doc.id)
+                    }
+                    updateCombinedList()
                 }
-                updateCombinedList()
             }
 
         awaitClose {
@@ -241,124 +240,217 @@ class FirestoreVocabularyRepository : VocabularyRepository {
     ): Result<Unit> = progressMutex.withLock {
         runCatching {
             val now = Timestamp.now()
-        val progressDocId = "${userId}_$setId"
-        val progressRef = firestore.collection("learning_progress").document(progressDocId)
-        val progressSnap = progressRef.get().await()
+            val progressDocId = "${userId}_$wordId"
+            val progressRef = firestore.collection("learning_progress").document(progressDocId)
+            val progressSnap = progressRef.get().await()
 
-        val currentLearnedIds = (progressSnap.get("learnedWordIds") as? List<*>)?.filterIsInstance<String>() ?: emptyList()
-        val isAlreadyLearned = wordId in currentLearnedIds
-        val newLearnedIds = if (isLearned) {
-            if (!isAlreadyLearned) currentLearnedIds + wordId else currentLearnedIds
-        } else {
-            currentLearnedIds - wordId
-        }
+            val currentProgress = if (progressSnap.exists()) {
+                progressSnap.toObject(LearningProgress::class.java) ?: LearningProgress()
+            } else {
+                LearningProgress(
+                    id = progressDocId,
+                    userId = userId,
+                    wordId = wordId,
+                    setId = setId,
+                    status = "NEW",
+                    easeFactor = 2.5,
+                    intervalDays = 0,
+                    repetitionCount = 0,
+                    correctCount = 0,
+                    wrongCount = 0,
+                    createdAt = now,
+                    updatedAt = now
+                )
+            }
 
-        val wordsSnapshot = firestore.collection("vocabulary_words")
-            .whereEqualTo("setId", setId)
-            .get()
-            .await()
-        val totalWordCount = wordsSnapshot.size()
+            val isNewWord = currentProgress.status == "NEW"
 
-        val newProgressPercent = if (totalWordCount > 0) {
-            newLearnedIds.size.toFloat() / totalWordCount
-        } else {
-            0f
-        }
+            val isCorrect = rating == null || rating == "good" || rating == "easy"
+            val newCorrectCount = if (isCorrect) currentProgress.correctCount + 1 else currentProgress.correctCount
+            val newWrongCount = if (!isCorrect) currentProgress.wrongCount + 1 else currentProgress.wrongCount
 
-        val progress = LearningProgress(
-            id = progressDocId,
-            userId = userId,
-            setId = setId,
-            wordId = "",
-            status = if (newProgressPercent >= 1.0f) "MASTERED" else "LEARNING",
-            progressPercent = newProgressPercent,
-            learnedWordIds = newLearnedIds,
-            createdAt = progressSnap.getTimestamp("createdAt") ?: now,
-            updatedAt = now
-        )
+            var newRepetitionCount = currentProgress.repetitionCount
+            var newEaseFactor = currentProgress.easeFactor
+            var newIntervalDays = currentProgress.intervalDays
 
-        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-        val todayStr = sdf.format(Date())
-        val dailyDocId = "${userId}_$todayStr"
-        val dailyRef = firestore.collection("daily_learning_plans").document(dailyDocId)
-        val dailySnap = dailyRef.get().await()
+            if (isCorrect) {
+                newRepetitionCount = currentProgress.repetitionCount + 1
+                val q = when (rating) {
+                    "good" -> 4
+                    "easy" -> 5
+                    else -> 4
+                }
+                val efDiff = 0.1 - (5 - q) * (0.08 + (5 - q) * 0.02)
+                newEaseFactor = (currentProgress.easeFactor + efDiff).coerceAtLeast(1.3)
+                newIntervalDays = when (newRepetitionCount) {
+                    1 -> 1
+                    2 -> 6
+                    else -> Math.round(currentProgress.intervalDays * newEaseFactor).toInt().coerceAtLeast(1)
+                }
+            } else {
+                newRepetitionCount = 0
+                val q = when (rating) {
+                    "hard" -> 3
+                    "again" -> 1
+                    else -> 3
+                }
+                val efDiff = 0.1 - (5 - q) * (0.08 + (5 - q) * 0.02)
+                newEaseFactor = (currentProgress.easeFactor + efDiff).coerceAtLeast(1.3)
+                newIntervalDays = 1
+            }
 
-        val isCorrect = rating == null || rating == "good" || rating == "easy"
-        val learnedIncrement = if (activityType != "QUIZ" && isLearned && !isAlreadyLearned) 1 else 0
-        val reviewedIncrement = 1
-        val correctIncrement = if (isCorrect) 1 else 0
-        val wrongIncrement = if (!isCorrect) 1 else 0
+            var newStatus = currentProgress.status
+            if (currentProgress.status == "NEW") {
+                newStatus = if (isCorrect) "REVIEW" else "LEARNING"
+            } else if (currentProgress.status == "LEARNING") {
+                if (isCorrect) newStatus = "REVIEW"
+            } else if (currentProgress.status == "REVIEW") {
+                if (!isCorrect) {
+                    newStatus = "LEARNING"
+                } else if (newRepetitionCount >= 4) {
+                    newStatus = "MASTERED"
+                }
+            } else if (currentProgress.status == "MASTERED") {
+                if (!isCorrect) newStatus = "LEARNING"
+            }
 
-        val dailyPlan = if (dailySnap.exists()) {
-            val currentDaily = dailySnap.toObject(DailyActivity::class.java) ?: DailyActivity()
-            currentDaily.copy(
-                learnedWords = currentDaily.learnedWords + learnedIncrement,
-                reviewedWords = currentDaily.reviewedWords + reviewedIncrement,
-                correctAnswers = currentDaily.correctAnswers + correctIncrement,
-                wrongAnswers = currentDaily.wrongAnswers + wrongIncrement,
-                totalAnswers = currentDaily.totalAnswers + 1,
-                updatedAt = now
+            val nextReview = Timestamp(now.seconds + newIntervalDays * 24 * 3600, 0)
+
+            val updatedProgress = currentProgress.copy(
+                status = newStatus,
+                easeFactor = newEaseFactor,
+                intervalDays = newIntervalDays,
+                repetitionCount = newRepetitionCount,
+                correctCount = newCorrectCount,
+                wrongCount = newWrongCount,
+                nextReviewDate = nextReview,
+                lastReviewedAt = now,
+                updatedAt = now,
+                createdAt = if (isNewWord) now else currentProgress.createdAt
             )
-        } else {
-            DailyActivity(
-                id = dailyDocId,
+
+            val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+            val todayStr = sdf.format(Date())
+            val dailyDocId = "${userId}_$todayStr"
+            val dailyRef = firestore.collection("daily_learning_plans").document(dailyDocId)
+            val dailySnap = dailyRef.get().await()
+
+            val learnedIncrement = if (isNewWord) 1 else 0
+            val reviewedIncrement = if (!isNewWord) 1 else 0
+            val correctIncrement = if (isCorrect) 1 else 0
+            val wrongIncrement = if (!isCorrect) 1 else 0
+
+            val dailyPlan = if (dailySnap.exists()) {
+                val currentDaily = dailySnap.toObject(DailyActivity::class.java) ?: DailyActivity()
+                currentDaily.copy(
+                    learnedWords = currentDaily.learnedWords + learnedIncrement,
+                    reviewedWords = currentDaily.reviewedWords + reviewedIncrement,
+                    correctAnswers = currentDaily.correctAnswers + correctIncrement,
+                    wrongAnswers = currentDaily.wrongAnswers + wrongIncrement,
+                    totalAnswers = currentDaily.totalAnswers + 1,
+                    updatedAt = now
+                )
+            } else {
+                DailyActivity(
+                    id = dailyDocId,
+                    userId = userId,
+                    date = todayStr,
+                    learnedWords = learnedIncrement,
+                    reviewedWords = reviewedIncrement,
+                    correctAnswers = correctIncrement,
+                    wrongAnswers = wrongIncrement,
+                    totalAnswers = 1,
+                    studyMinutes = 1,
+                    createdAt = now,
+                    updatedAt = now
+                )
+            }
+
+            val batch = firestore.batch()
+            batch.set(progressRef, updatedProgress)
+            batch.set(dailyRef, dailyPlan)
+
+            val logRef = firestore.collection("review_logs").document()
+            val reviewLog = ReviewLog(
+                id = logRef.id,
                 userId = userId,
-                date = todayStr,
-                learnedWords = learnedIncrement,
-                reviewedWords = reviewedIncrement,
-                correctAnswers = correctIncrement,
-                wrongAnswers = wrongIncrement,
-                totalAnswers = 1,
-                studyMinutes = 1,
-                createdAt = now,
-                updatedAt = now
+                wordId = wordId,
+                setId = setId,
+                sessionId = "",
+                activityType = activityType,
+                rating = rating ?: (if (isLearned) "good" else "again"),
+                isCorrect = isCorrect,
+                reviewedAt = now
             )
-        }
+            batch.set(logRef, reviewLog)
 
-        val batch = firestore.batch()
-        if (activityType != "QUIZ") {
-            batch.set(progressRef, progress)
-        }
-        batch.set(dailyRef, dailyPlan)
-
-        val logRef = firestore.collection("review_logs").document()
-        val reviewLog = ReviewLog(
-            id = logRef.id,
-            userId = userId,
-            wordId = wordId,
-            setId = setId,
-            sessionId = "",
-            activityType = activityType,
-            rating = rating ?: (if (isLearned) "good" else "again"),
-            isCorrect = isCorrect,
-            reviewedAt = now
-        )
-        batch.set(logRef, reviewLog)
-
-        if (activityType != "QUIZ") {
             val setRef = firestore.collection("vocabulary_sets").document(setId)
             val setSnap = setRef.get().await()
-            if (setSnap.exists()) {
-                val setUserId = setSnap.getString("userId") ?: ""
-                val updates = mutableMapOf<String, Any>()
-                if (setUserId != "system") {
-                    updates["wordCount"] = totalWordCount
-                    updates["lastStudiedAt"] = now
-                }
-                if (updates.isNotEmpty()) {
-                    batch.update(setRef, updates)
-                }
+            if (setSnap.exists() && setSnap.getString("userId") != "system") {
+                batch.update(setRef, "lastStudiedAt", now)
             }
-        }
 
-        batch.commit().await()
-        ProgressRepository().updateAchievements(userId)
+            batch.commit().await()
+            // ProgressRepository().updateAchievements(userId)
+            Unit
         }
     }
 
-    override suspend fun toggleWordLearned(setId: String, wordId: String, isLearned: Boolean): Result<Unit> {
-        val userId = FirebaseAuth.getInstance().currentUser?.uid ?: return Result.failure(Exception("User not authenticated"))
-        return updateWordProgress(userId, setId, wordId, isLearned = isLearned, activityType = "REVIEW")
+    override suspend fun toggleWordLearned(setId: String, wordId: String, isLearned: Boolean): Result<Unit> = runCatching {
+        val userId = FirebaseAuth.getInstance().currentUser?.uid ?: return@runCatching
+        val docId = "${userId}_$wordId"
+        val progressRef = firestore.collection("learning_progress").document(docId)
+        val setRef = firestore.collection("vocabulary_sets").document(setId)
+        
+        val now = Timestamp.now()
+        val nextReview = Timestamp(now.seconds + 24 * 3600, 0)
+        
+        val setSnap = firestore.collection("vocabulary_sets").document(setId).get().await()
+        val isSystemSet = setSnap.getString("userId") == "system"
+
+        firestore.runTransaction { transaction ->
+            if (isLearned) {
+                val progress = LearningProgress(
+                    id = docId,
+                    userId = userId,
+                    wordId = wordId,
+                    setId = setId,
+                    status = "REVIEW",
+                    easeFactor = 2.5,
+                    intervalDays = 1,
+                    repetitionCount = 1,
+                    correctCount = 1,
+                    wrongCount = 0,
+                    nextReviewDate = nextReview,
+                    lastReviewedAt = now,
+                    createdAt = now,
+                    updatedAt = now
+                )
+                transaction.set(progressRef, progress)
+            } else {
+                val progress = LearningProgress(
+                    id = docId,
+                    userId = userId,
+                    wordId = wordId,
+                    setId = setId,
+                    status = "NEW",
+                    easeFactor = 2.5,
+                    intervalDays = 0,
+                    repetitionCount = 0,
+                    correctCount = 0,
+                    wrongCount = 0,
+                    nextReviewDate = null,
+                    lastReviewedAt = null,
+                    createdAt = now,
+                    updatedAt = now
+                )
+                transaction.set(progressRef, progress)
+            }
+            if (!isSystemSet) {
+                transaction.update(setRef, "lastStudiedAt", now)
+            }
+        }.await()
+        // ProgressRepository().updateAchievements(userId)
     }
 
     override suspend fun updateFlashcardProgress(setId: String, wordId: String, rating: String): Result<Unit> {
@@ -389,12 +481,11 @@ class FirestoreVocabularyRepository : VocabularyRepository {
         )
         docRef.set(result).await()
         
-        ProgressRepository().updateAchievements(userId)
+        // ProgressRepository().updateAchievements(userId)
     }
 
     private suspend fun updateSetStats(setId: String) {
         try {
-            val userId = FirebaseAuth.getInstance().currentUser?.uid ?: return
             val wordsSnapshot = firestore.collection("vocabulary_words")
                 .whereEqualTo("setId", setId)
                 .get()
@@ -412,18 +503,6 @@ class FirestoreVocabularyRepository : VocabularyRepository {
                     "updatedAt", Timestamp.now()
                 )
             }
-            
-            val progressRef = firestore.collection("learning_progress").document("${userId}_$setId")
-            val progressSnap = progressRef.get().await()
-            if (progressSnap.exists()) {
-                val learnedWordIds = (progressSnap.get("learnedWordIds") as? List<*>)?.filterIsInstance<String>() ?: emptyList()
-                val newProgressPercent = if (totalCount > 0) learnedWordIds.size.toFloat() / totalCount else 0f
-                batch.update(progressRef, 
-                    "progressPercent", newProgressPercent,
-                    "updatedAt", Timestamp.now()
-                )
-            }
-            
             batch.commit().await()
         } catch (e: Exception) {
             e.printStackTrace()
@@ -434,7 +513,6 @@ class FirestoreVocabularyRepository : VocabularyRepository {
         val batch = firestore.batch()
         val now = Timestamp.now()
         
-        // Define Sets
         val set1Id = "ielts_academic_$userId"
         val set1 = VocabularySet(
             id = set1Id,
@@ -483,41 +561,84 @@ class FirestoreVocabularyRepository : VocabularyRepository {
             userId = userId
         )
         
-        // Set Documents
         batch.set(firestore.collection("vocabulary_sets").document(set1Id), set1)
         batch.set(firestore.collection("vocabulary_sets").document(set2Id), set2)
         batch.set(firestore.collection("vocabulary_sets").document(set3Id), set3)
         batch.set(firestore.collection("vocabulary_sets").document(set4Id), set4)
         
-        // Seed learning progress for set1 (40% progress)
-        val progress1 = LearningProgress(
-            id = "${userId}_$set1Id",
-            userId = userId,
-            setId = set1Id,
-            wordId = "",
-            progressPercent = 0.4f,
-            learnedWordIds = listOf("w1_$userId", "w4_$userId"),
-            createdAt = now,
-            updatedAt = now
-        )
-        batch.set(firestore.collection("learning_progress").document("${userId}_$set1Id"), progress1)
-
-        // Seed learning progress for set2 (100% progress)
-        val progress2 = LearningProgress(
-            id = "${userId}_$set2Id",
-            userId = userId,
-            setId = set2Id,
-            wordId = "",
-            progressPercent = 1.0f,
-            learnedWordIds = listOf("w101_$userId", "w102_$userId"),
-            createdAt = now,
-            updatedAt = now
-        )
-        batch.set(firestore.collection("learning_progress").document("${userId}_$set2Id"), progress2)
+        val tomorrow = Timestamp(now.seconds + 24 * 3600, 0)
         
-        // Define Words
+        val progressW1 = LearningProgress(
+            id = "${userId}_w1_$userId",
+            userId = userId,
+            wordId = "w1_$userId",
+            setId = set1Id,
+            status = "REVIEW",
+            easeFactor = 2.5,
+            intervalDays = 1,
+            repetitionCount = 1,
+            correctCount = 1,
+            wrongCount = 0,
+            nextReviewDate = tomorrow,
+            lastReviewedAt = now,
+            createdAt = now,
+            updatedAt = now
+        )
+        val progressW4 = LearningProgress(
+            id = "${userId}_w4_$userId",
+            userId = userId,
+            wordId = "w4_$userId",
+            setId = set1Id,
+            status = "REVIEW",
+            easeFactor = 2.5,
+            intervalDays = 1,
+            repetitionCount = 1,
+            correctCount = 1,
+            wrongCount = 0,
+            nextReviewDate = tomorrow,
+            lastReviewedAt = now,
+            createdAt = now,
+            updatedAt = now
+        )
+        batch.set(firestore.collection("learning_progress").document("${userId}_w1_$userId"), progressW1)
+        batch.set(firestore.collection("learning_progress").document("${userId}_w4_$userId"), progressW4)
+
+        val progressW101 = LearningProgress(
+            id = "${userId}_w101_$userId",
+            userId = userId,
+            wordId = "w101_$userId",
+            setId = set2Id,
+            status = "MASTERED",
+            easeFactor = 2.6,
+            intervalDays = 15,
+            repetitionCount = 4,
+            correctCount = 4,
+            wrongCount = 0,
+            nextReviewDate = tomorrow,
+            lastReviewedAt = now,
+            createdAt = now,
+            updatedAt = now
+        )
+        val progressW102 = LearningProgress(
+            id = "${userId}_w102_$userId",
+            userId = userId,
+            wordId = "w102_$userId",
+            setId = set2Id,
+            status = "MASTERED",
+            easeFactor = 2.6,
+            intervalDays = 15,
+            repetitionCount = 4,
+            correctCount = 4,
+            wrongCount = 0,
+            nextReviewDate = tomorrow,
+            lastReviewedAt = now,
+            createdAt = now,
+            updatedAt = now
+        )
+        batch.set(firestore.collection("learning_progress").document("${userId}_w101_$userId"), progressW101)
+        batch.set(firestore.collection("learning_progress").document("${userId}_w102_$userId"), progressW102)
+        
         val words = listOf(
-            // IELTS
             VocabularyWord(
                 id = "w1_$userId",
                 setId = set1Id,
@@ -598,8 +719,6 @@ class FirestoreVocabularyRepository : VocabularyRepository {
                 isLearned = false,
                 userId = userId
             ),
-            
-            // Tech Startup
             VocabularyWord(
                 id = "w101_$userId",
                 setId = set2Id,
@@ -632,8 +751,6 @@ class FirestoreVocabularyRepository : VocabularyRepository {
                 isLearned = true,
                 userId = userId
             ),
-            
-            // Business Meetings
             VocabularyWord(
                 id = "w201_$userId",
                 setId = set3Id,

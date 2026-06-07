@@ -97,11 +97,10 @@ class ProgressRepository {
             
             val progressSnapshot = firestore.collection("learning_progress")
                 .whereEqualTo("userId", userId)
+                .whereEqualTo("status", "MASTERED")
                 .get()
                 .await()
-            val masteredCount = progressSnapshot.documents.sumOf { doc ->
-                (doc.get("learnedWordIds") as? List<*>)?.filterIsInstance<String>()?.size ?: 0
-            }
+            val masteredCount = progressSnapshot.size()
             
             val practiceResultsSnapshot = firestore.collection("practice_results")
                 .whereEqualTo("userId", userId)
@@ -224,7 +223,7 @@ class ProgressRepository {
             val learningProgressList = progressSnapshot.documents.mapNotNull { doc ->
                 doc.toObject(LearningProgress::class.java)?.copy(id = doc.id)
             }
-            val totalWordsLearned = learningProgressList.sumOf { it.learnedWordIds.size }
+            val totalWordsLearned = learningProgressList.count { it.status != "NEW" || it.repetitionCount > 0 }
 
             if (totalWordsLearned == 0) {
                 return ProgressSummary(
@@ -239,17 +238,18 @@ class ProgressRepository {
                 )
             }
 
-            val masteredWords = totalWordsLearned
+            val masteredWords = learningProgressList.count { it.status == "MASTERED" }
 
-            val reviewDueWords = 0
+            val now = Timestamp.now()
+            val reviewDueWords = learningProgressList.count { 
+                it.status == "REVIEW" && it.nextReviewDate != null && it.nextReviewDate.seconds <= now.seconds 
+            }
 
-            val dailyPlansSnapshot = firestore.collection("daily_learning_plans")
-                .whereEqualTo("userId", userId)
-                .get()
-                .await()
+            // Lấy danh sách hoạt động đã được chuẩn hóa và sửa sai lệch
+            val dailyActivities = getDailyActivity(userId, learningProgressList)
 
-            val totalCorrect = dailyPlansSnapshot.documents.sumOf { it.getLong("correctAnswers") ?: 0L }
-            val totalAnswers = dailyPlansSnapshot.documents.sumOf { it.getLong("totalAnswers") ?: 0L }
+            val totalCorrect = dailyActivities.sumOf { it.correctAnswers.toLong() }
+            val totalAnswers = dailyActivities.sumOf { it.totalAnswers.toLong() }
             
             val accuracy = if (totalAnswers > 0) {
                 (totalCorrect.toDouble() / totalAnswers * 100)
@@ -277,12 +277,9 @@ class ProgressRepository {
                 0.0
             }
 
-            val activeDates = dailyPlansSnapshot.documents.filter { doc ->
-                val learned = doc.getLong("learnedWords") ?: 0L
-                val reviewed = doc.getLong("reviewedWords") ?: 0L
-                val answers = doc.getLong("totalAnswers") ?: 0L
-                learned > 0L || reviewed > 0L || answers > 0L
-            }.mapNotNull { it.getString("date") }
+            val activeDates = dailyActivities.filter { doc ->
+                doc.learnedWords > 0 || doc.reviewedWords > 0 || doc.totalAnswers > 0
+            }.map { it.date }
             val streakDays = calculateStreak(activeDates)
 
             val levelEstimate = when {
@@ -291,8 +288,8 @@ class ProgressRepository {
                 else -> "Beginner"
             }
 
-            val lastStudyDate = dailyPlansSnapshot.documents
-                .mapNotNull { it.getString("date") }
+            val lastStudyDate = dailyActivities
+                .map { it.date }
                 .sortedDescending()
                 .firstOrNull() ?: ""
 
@@ -313,11 +310,25 @@ class ProgressRepository {
 
     /**
      * Lấy danh sách hoạt động học tập từ collection top-level daily_learning_plans.
-     * Sắp xếp theo thứ tự thứ trong tuần từ T2 đến CN.
-     * Không tự động seed dữ liệu mẫu.
+     * Tự động kiểm tra và sửa sai lệch (self-healing) dựa trên danh sách tiến trình học tập.
      */
     suspend fun getDailyActivity(userId: String): List<DailyActivity> {
         return try {
+            val progressSnapshot = firestore.collection("learning_progress")
+                .whereEqualTo("userId", userId)
+                .get()
+                .await()
+            val progressList = progressSnapshot.documents.mapNotNull { doc ->
+                doc.toObject(LearningProgress::class.java)?.copy(id = doc.id)
+            }
+            getDailyActivity(userId, progressList)
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    suspend fun getDailyActivity(userId: String, progressList: List<LearningProgress>): List<DailyActivity> {
+        val rawActivities = try {
             val snapshot = firestore.collection("daily_learning_plans")
                 .whereEqualTo("userId", userId)
                 .get()
@@ -327,11 +338,84 @@ class ProgressRepository {
             } else {
                 snapshot.documents.mapNotNull { doc ->
                     doc.toObject(DailyActivity::class.java)?.copy(id = doc.id)
-                }.sortedBy { it.date }
+                }
             }
         } catch (e: Exception) {
             emptyList()
         }
+        return syncAndCorrectDailyActivities(userId, progressList, rawActivities)
+    }
+
+    private suspend fun syncAndCorrectDailyActivities(
+        userId: String,
+        progressList: List<LearningProgress>,
+        activities: List<DailyActivity>
+    ): List<DailyActivity> {
+        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        val todayStr = sdf.format(Date())
+
+        // 1. Tính toán số từ học thực tế theo ngày từ learning_progress
+        val learnedByDate = progressList
+            .filter { it.status != "NEW" || it.repetitionCount > 0 }
+            .groupBy { 
+                val ts = it.createdAt ?: it.lastReviewedAt ?: it.updatedAt
+                if (ts != null) sdf.format(ts.toDate()) else ""
+            }
+            .filterKeys { it.isNotEmpty() }
+            .mapValues { it.value.size }
+
+        // 2. Chuyển đổi danh sách hoạt động hiện tại sang Map
+        val activityMap = activities.associateBy { it.date }.toMutableMap()
+
+        // Đảm bảo hoạt động hôm nay luôn có trong Map để tự động sửa hoặc khởi tạo nếu chưa có
+        if (!activityMap.containsKey(todayStr)) {
+            activityMap[todayStr] = DailyActivity(
+                id = "${userId}_$todayStr",
+                userId = userId,
+                date = todayStr,
+                learnedWords = 0,
+                reviewedWords = 0,
+                totalAnswers = 0,
+                correctAnswers = 0,
+                wrongAnswers = 0,
+                studyMinutes = 0,
+                createdAt = Timestamp.now(),
+                updatedAt = Timestamp.now()
+            )
+        }
+
+        val updatedActivities = mutableListOf<DailyActivity>()
+        val batch = firestore.batch()
+        var batchNeeded = false
+
+        for ((date, activity) in activityMap) {
+            val correctLearned = learnedByDate[date] ?: 0
+            
+            // Nếu phát hiện sai lệch về số lượng từ đã học
+            if (activity.learnedWords != correctLearned) {
+                val correctedActivity = activity.copy(
+                    learnedWords = correctLearned,
+                    updatedAt = Timestamp.now()
+                )
+                updatedActivities.add(correctedActivity)
+                
+                val docRef = firestore.collection("daily_learning_plans").document(correctedActivity.id.ifBlank { "${userId}_$date" })
+                batch.set(docRef, correctedActivity)
+                batchNeeded = true
+            } else {
+                updatedActivities.add(activity)
+            }
+        }
+
+        if (batchNeeded) {
+            try {
+                batch.commit().await()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        return updatedActivities.sortedBy { it.date }
     }
 
     /**

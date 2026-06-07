@@ -47,8 +47,14 @@ class FlashcardViewModel : ViewModel() {
                     .whereEqualTo("userId", userId)
                     .get()
                     .addOnSuccessListener { progressSnapshot ->
-                        val learnedWordIds = progressSnapshot.documents.flatMap { doc ->
-                            (doc.get("learnedWordIds") as? List<*>)?.filterIsInstance<String>() ?: emptyList()
+                        val learnedWordIds = progressSnapshot.documents.mapNotNull { doc ->
+                            val status = doc.getString("status") ?: "NEW"
+                            val repCount = doc.getLong("repetitionCount") ?: 0L
+                            if (status != "NEW" || repCount > 0L) {
+                                doc.getString("wordId")
+                            } else {
+                                null
+                            }
                         }.toSet()
                         
                         firestore.collection("vocabulary_words")

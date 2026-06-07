@@ -97,10 +97,11 @@ class ProgressRepository {
             
             val progressSnapshot = firestore.collection("learning_progress")
                 .whereEqualTo("userId", userId)
-                .whereEqualTo("status", "MASTERED")
                 .get()
                 .await()
-            val masteredCount = progressSnapshot.size()
+            val masteredCount = progressSnapshot.documents.sumOf { doc ->
+                (doc.get("learnedWordIds") as? List<*>)?.filterIsInstance<String>()?.size ?: 0
+            }
             
             val practiceResultsSnapshot = firestore.collection("practice_results")
                 .whereEqualTo("userId", userId)
@@ -223,7 +224,7 @@ class ProgressRepository {
             val learningProgressList = progressSnapshot.documents.mapNotNull { doc ->
                 doc.toObject(LearningProgress::class.java)?.copy(id = doc.id)
             }
-            val totalWordsLearned = learningProgressList.count { it.status != "NEW" || it.repetitionCount > 0 }
+            val totalWordsLearned = learningProgressList.sumOf { it.learnedWordIds.size }
 
             if (totalWordsLearned == 0) {
                 return ProgressSummary(
@@ -238,12 +239,9 @@ class ProgressRepository {
                 )
             }
 
-            val masteredWords = learningProgressList.count { it.status == "MASTERED" }
+            val masteredWords = totalWordsLearned
 
-            val now = Timestamp.now()
-            val reviewDueWords = learningProgressList.count { 
-                it.status == "REVIEW" && it.nextReviewDate != null && it.nextReviewDate.seconds <= now.seconds 
-            }
+            val reviewDueWords = 0
 
             val dailyPlansSnapshot = firestore.collection("daily_learning_plans")
                 .whereEqualTo("userId", userId)

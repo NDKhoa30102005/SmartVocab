@@ -36,6 +36,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
+import com.example.smartvocab.navigation.Screen
 import com.example.smartvocab.data.model.VocabularyWord
 import com.example.smartvocab.data.model.LearningProgress
 import com.example.smartvocab.data.repository.FirestoreVocabularyRepository
@@ -45,74 +46,30 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.Timestamp
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.smartvocab.viewmodel.FlashcardViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FlashcardScreen(navController: NavHostController, setId: String?) {
+fun FlashcardScreen(
+    navController: NavHostController,
+    setId: String?,
+    viewModel: FlashcardViewModel = viewModel()
+) {
     val context = LocalContext.current
-    val repository = remember { FirestoreVocabularyRepository() }
-    val coroutineScope = rememberCoroutineScope()
+    val uiState by viewModel.uiState
 
-    var words by remember { mutableStateOf<List<VocabularyWord>>(emptyList()) }
-    var isLoading by remember { mutableStateOf(true) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-    var reloadTrigger by remember { mutableStateOf(0) }
+    val words = uiState.words
+    val isLoading = uiState.isLoading
+    val errorMessage = uiState.errorMessage
+    val currentIndex = uiState.currentIndex
+    val isFlipped = uiState.isFlipped
+    val againCount = uiState.againCount
+    val goodCount = uiState.goodCount
 
-    LaunchedEffect(setId, reloadTrigger) {
-        isLoading = true
-        errorMessage = null
-        val userId = FirebaseAuth.getInstance().currentUser?.uid ?: ""
-        if (setId.isNullOrBlank() || setId == "null") {
-            val now = Timestamp.now()
-            FirebaseFirestore.getInstance().collection("learning_progress")
-                .whereEqualTo("userId", userId)
-                .whereEqualTo("status", "REVIEW")
-                .get()
-                .addOnSuccessListener { progressSnapshot ->
-                    val dueWordIds = progressSnapshot.documents.filter { doc ->
-                        val nextDate = doc.getTimestamp("nextReviewDate")
-                        nextDate != null && nextDate.seconds <= now.seconds
-                    }.mapNotNull { doc -> doc.getString("wordId") }
-                    
-                    if (dueWordIds.isEmpty()) {
-                        words = emptyList()
-                        isLoading = false
-                    } else {
-                        FirebaseFirestore.getInstance().collection("vocabulary_words")
-                            .get()
-                            .addOnSuccessListener { wordsSnapshot ->
-                                val allWords = wordsSnapshot.toObjects(VocabularyWord::class.java)
-                                words = allWords.filter { it.id in dueWordIds }.sortedBy { it.createdAt }
-                                isLoading = false
-                            }
-                            .addOnFailureListener { exception ->
-                                errorMessage = "Lỗi khi tải từ vựng: ${exception.localizedMessage}"
-                                isLoading = false
-                            }
-                    }
-                }
-                .addOnFailureListener { exception ->
-                    errorMessage = "Lỗi khi tải tiến trình: ${exception.localizedMessage}"
-                    isLoading = false
-                }
-        } else {
-            try {
-                repository.getWords(setId).collect { wordList ->
-                    words = wordList.sortedBy { it.createdAt }
-                    isLoading = false
-                }
-            } catch (e: Exception) {
-                errorMessage = "Lỗi khi tải dữ liệu: ${e.localizedMessage}"
-                isLoading = false
-            }
-        }
+    LaunchedEffect(setId) {
+        viewModel.loadWords(setId)
     }
-
-    var currentIndex by rememberSaveable { mutableStateOf(0) }
-    var isFlipped by rememberSaveable { mutableStateOf(false) }
-    var againCount by rememberSaveable { mutableStateOf(0) }
-    var goodCount by rememberSaveable { mutableStateOf(0) }
-    var isSubmitting by remember { mutableStateOf(false) }
 
     val currentWord = words.getOrNull(currentIndex)
     val isFinished = !isLoading && errorMessage == null && words.isNotEmpty() && currentIndex >= words.size
@@ -124,29 +81,11 @@ fun FlashcardScreen(navController: NavHostController, setId: String?) {
     )
 
     fun handleAnswer(rating: String) {
-        if (isSubmitting) return
-        val word = currentWord ?: return
-        isSubmitting = true
-        coroutineScope.launch {
-            try {
-                repository.updateFlashcardProgress(word.setId, word.id, rating)
-            } catch (e: Exception) {
-                // Ignore or log error
-            } finally {
-                isSubmitting = false
-            }
-        }
-        val isCorrect = rating == "good" || rating == "easy"
-        if (isCorrect) goodCount++ else againCount++
-        isFlipped = false
-        currentIndex++
+        viewModel.handleAnswer(rating)
     }
 
     fun resetSession() {
-        currentIndex = 0
-        isFlipped = false
-        againCount = 0
-        goodCount = 0
+        viewModel.resetSession()
     }
 
     Scaffold(
@@ -207,7 +146,7 @@ fun FlashcardScreen(navController: NavHostController, setId: String?) {
                                 textAlign = TextAlign.Center
                             )
                             Spacer(modifier = Modifier.height(16.dp))
-                            Button(onClick = { reloadTrigger++ }) {
+                            Button(onClick = { viewModel.loadWords(setId) }) {
                                 Text("Tải lại")
                             }
                         }
@@ -222,7 +161,14 @@ fun FlashcardScreen(navController: NavHostController, setId: String?) {
                         goodCount = goodCount,
                         againCount = againCount,
                         onRetry = { resetSession() },
-                        onBack = { navController.popBackStack() }
+                        onBack = { navController.popBackStack() },
+                        onStartQuiz = if (!setId.isNullOrBlank()) {
+                            {
+                                navController.navigate(Screen.QuizQuestion.createRoute(setId)) {
+                                    popUpTo(Screen.FlashcardLearning.createRoute(setId)) { inclusive = true }
+                                }
+                            }
+                        } else null
                     )
                 }
                 currentWord != null -> {
@@ -281,7 +227,7 @@ fun FlashcardScreen(navController: NavHostController, setId: String?) {
                                 MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
                                 RoundedCornerShape(24.dp)
                             )
-                            .clickable { isFlipped = !isFlipped }
+                            .clickable { viewModel.toggleFlip() }
                     ) {
                         if (rotation <= 90f) {
                             // Front of Card
@@ -448,123 +394,61 @@ fun FlashcardScreen(navController: NavHostController, setId: String?) {
 
                     Spacer(modifier = Modifier.weight(0.1f))
 
-                    // Bottom Spaced Repetition Controls
+                    // Bottom controls
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            .padding(vertical = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        // Again
-                        Card(
+                        // Chưa thuộc
+                        Button(
                             onClick = { handleAnswer("again") },
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f)),
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(54.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer,
+                                contentColor = MaterialTheme.colorScheme.onErrorContainer
+                            ),
+                            shape = RoundedCornerShape(16.dp)
                         ) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 12.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center
-                            ) {
-                                Text(
-                                    text = "Ôn lại",
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.error
-                                )
-                                Text(
-                                    text = "<1p",
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.error.copy(alpha = 0.7f)
-                                )
-                            }
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Chưa thuộc",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
 
-                        // Hard
-                        Card(
-                            onClick = { handleAnswer("hard") },
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.2f)),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 12.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center
-                            ) {
-                                Text(
-                                    text = "Khó",
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.tertiary
-                                )
-                                Text(
-                                    text = "6p",
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.7f)
-                                )
-                            }
-                        }
-
-                        // Good
-                        Card(
+                        // Đã thuộc
+                        Button(
                             onClick = { handleAnswer("good") },
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.2f)),
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(54.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary
+                            ),
+                            shape = RoundedCornerShape(16.dp)
                         ) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 12.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center
-                            ) {
-                                Text(
-                                    text = "Tốt",
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.secondary
-                                )
-                                Text(
-                                    text = "10p",
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.7f)
-                                )
-                            }
-                        }
-
-                        // Easy
-                        Card(
-                            onClick = { handleAnswer("easy") },
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.1f)),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 12.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center
-                            ) {
-                                Text(
-                                    text = "Dễ",
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                                Text(
-                                    text = "4n",
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
-                                )
-                            }
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Đã thuộc",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
                 }
@@ -611,7 +495,8 @@ fun ResultContent(
     goodCount: Int,
     againCount: Int,
     onRetry: () -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onStartQuiz: (() -> Unit)? = null
 ) {
     Column(
         modifier = Modifier
@@ -694,6 +579,20 @@ fun ResultContent(
         
         Spacer(modifier = Modifier.height(40.dp))
         
+        onStartQuiz?.let { startQuiz ->
+            Button(
+                onClick = startQuiz,
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                shape = RoundedCornerShape(24.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+            ) {
+                Icon(Icons.Default.School, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Luyện tập Quiz ngay", fontWeight = FontWeight.Bold)
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+
         Button(
             onClick = onRetry,
             modifier = Modifier.fillMaxWidth().height(48.dp),

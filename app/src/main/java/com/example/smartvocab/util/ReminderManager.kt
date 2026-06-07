@@ -84,23 +84,27 @@ class DueReviewReminderWorker(val context: Context, params: WorkerParameters) : 
             return Result.success()
         }
         
-        val now = Timestamp.now()
         val progressQuery = db.collection("learning_progress")
             .whereEqualTo("userId", userId)
-            .whereEqualTo("status", "REVIEW")
             .get()
             .await()
             
-        val dueCount = progressQuery.documents.count { doc ->
-            val nextReview = doc.getTimestamp("nextReviewDate")
-            nextReview != null && nextReview.seconds <= now.seconds
+        val learnedCount = progressQuery.documents.sumOf { doc ->
+            (doc.get("learnedWordIds") as? List<*>)?.filterIsInstance<String>()?.size ?: 0
         }
         
-        if (dueCount > 0) {
+        val wordsQuery = db.collection("vocabulary_words")
+            .get()
+            .await()
+        val totalWordCount = wordsQuery.size()
+        
+        val remainingCount = (totalWordCount - learnedCount).coerceAtLeast(0)
+        
+        if (remainingCount > 0) {
             sendNotification(
                 context,
-                "Có từ vựng cần ôn tập! ⏱️",
-                "Bạn có $dueCount từ vựng đã đến hạn ôn tập. Hãy ôn ngay để không bị quên nhé."
+                "Tiếp tục học từ vựng thôi! ⏱️",
+                "Bạn còn $remainingCount từ vựng chưa thuộc trong các bộ từ. Hãy vào học ngay nhé!"
             )
         }
         

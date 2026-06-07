@@ -99,13 +99,19 @@ fun NavGraph(navController: NavHostController) {
             arguments = listOf(
                 navArgument("score") { type = NavType.IntType },
                 navArgument("total") { type = NavType.IntType },
-                navArgument("time") { type = NavType.StringType }
+                navArgument("time") { type = NavType.StringType },
+                navArgument("setId") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = "null"
+                }
             )
         ) { backStackEntry ->
             val score = backStackEntry.arguments?.getInt("score") ?: 0
             val total = backStackEntry.arguments?.getInt("total") ?: 0
             val time = backStackEntry.arguments?.getString("time") ?: "00:00"
-            QuizResultScreen(navController = navController, score = score, total = total, time = time)
+            val setId = backStackEntry.arguments?.getString("setId").let { if (it == "null") null else it }
+            QuizResultScreen(navController = navController, score = score, total = total, time = time, setId = setId)
         }
 
         // Notification Screen

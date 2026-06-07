@@ -45,9 +45,11 @@ sealed class Screen(val route: String) {
         }
     }
     
-    object QuizResult : Screen("quiz_result?score={score}&total={total}&time={time}") {
-        fun createRoute(score: Int, total: Int, time: String) = 
-            "quiz_result?score=$score&total=$total&time=$time"
+    object QuizResult : Screen("quiz_result?score={score}&total={total}&time={time}&setId={setId}") {
+        fun createRoute(score: Int, total: Int, time: String, setId: String? = null): String {
+            val sId = setId ?: "null"
+            return "quiz_result?score=$score&total=$total&time=$time&setId=$sId"
+        }
     }
     
     object Notification : Screen("notifications")

@@ -20,5 +20,9 @@ data class LearningProgress(
     val nextReviewDate: Timestamp? = null,   // Thời gian ôn tập tiếp theo
     val lastReviewedAt: Timestamp? = null,   // Lần ôn tập cuối cùng
     val createdAt: Timestamp? = null,        // Thời gian tạo
-    val updatedAt: Timestamp? = null         // Thời gian cập nhật
+    val updatedAt: Timestamp? = null,        // Thời gian cập nhật
+    
+    // Các trường mới hỗ trợ cơ chế lưu tiến trình tối giản
+    val progressPercent: Float = 0f,                 // Tiến độ học của bộ từ vựng (tỉ lệ từ 0f đến 1f)
+    val learnedWordIds: List<String> = emptyList()   // Danh sách ID các từ vựng đã thuộc
 )

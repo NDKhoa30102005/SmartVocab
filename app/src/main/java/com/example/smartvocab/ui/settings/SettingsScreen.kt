@@ -29,6 +29,13 @@ import androidx.navigation.NavHostController
 import com.example.smartvocab.navigation.Screen
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.smartvocab.viewmodel.ProgressViewModel
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.ui.text.style.TextAlign
+import com.example.smartvocab.ui.onboarding.GoalItem
+import com.example.smartvocab.ui.onboarding.LevelItem
 import com.google.firebase.auth.FirebaseAuth
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -47,6 +54,10 @@ fun SettingsTab(
     var dailyReminderTime by remember { mutableStateOf("20:00") }
     var dailyReminderEnabled by remember { mutableStateOf(true) }
     var dueReviewReminderEnabled by remember { mutableStateOf(true) }
+    var selectedGoal by remember { mutableStateOf("ielts") }
+    var selectedLevel by remember { mutableStateOf("A1") }
+    var showGoalDialog by remember { mutableStateOf(false) }
+    var showLevelDialog by remember { mutableStateOf(false) }
 
     // Đồng bộ hóa từ Firestore sang local state khi tải xong
     LaunchedEffect(settings) {
@@ -54,6 +65,8 @@ fun SettingsTab(
         dailyReminderTime = settings.reminderTime
         dailyReminderEnabled = settings.dailyReminderEnabled
         dueReviewReminderEnabled = settings.dueReviewReminderEnabled
+        selectedGoal = settings.selectedGoal
+        selectedLevel = settings.selectedLevel
     }
 
     Column(
@@ -192,9 +205,9 @@ fun SettingsTab(
                 ) {
                     SettingsRow(
                         label = "Mục tiêu hiện tại",
-                        value = "IELTS",
+                        value = getGoalName(selectedGoal),
                         onClick = {
-                            Toast.makeText(context, "Tính năng thay đổi mục tiêu đang phát triển", Toast.LENGTH_SHORT).show()
+                            showGoalDialog = true
                         }
                     )
                     
@@ -202,9 +215,9 @@ fun SettingsTab(
                     
                     SettingsRow(
                         label = "Trình độ hiện tại",
-                        value = summary.levelEstimate,
+                        value = getLevelNameEn(selectedLevel),
                         onClick = {
-                            Toast.makeText(context, "Tính năng thay đổi trình độ đang phát triển", Toast.LENGTH_SHORT).show()
+                            showLevelDialog = true
                         }
                     )
                 }
@@ -361,7 +374,9 @@ fun SettingsTab(
                         newWordsPerDay = newWordsCount.toInt(),
                         reminderTime = dailyReminderTime,
                         dailyReminderEnabled = dailyReminderEnabled,
-                        dueReviewReminderEnabled = dueReviewReminderEnabled
+                        dueReviewReminderEnabled = dueReviewReminderEnabled,
+                        selectedGoal = selectedGoal,
+                        selectedLevel = selectedLevel
                     )
                     viewModel.updateSettings(newSettings) { success ->
                         if (success) {
@@ -465,6 +480,54 @@ fun SettingsTab(
             Spacer(modifier = Modifier.height(24.dp))
         }
     }
+
+    if (showGoalDialog) {
+        GoalSelectionDialog(
+            currentGoal = selectedGoal,
+            onDismiss = { showGoalDialog = false },
+            onSave = { newGoal ->
+                selectedGoal = newGoal
+                showGoalDialog = false
+                val newSettings = settings.copy(
+                    newWordsPerDay = newWordsCount.toInt(),
+                    reminderTime = dailyReminderTime,
+                    dailyReminderEnabled = dailyReminderEnabled,
+                    dueReviewReminderEnabled = dueReviewReminderEnabled,
+                    selectedGoal = newGoal,
+                    selectedLevel = selectedLevel
+                )
+                viewModel.updateSettings(newSettings) { success ->
+                    if (success) {
+                        Toast.makeText(context, "Đã cập nhật mục tiêu học tập!", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        )
+    }
+
+    if (showLevelDialog) {
+        LevelSelectionDialog(
+            currentLevel = selectedLevel,
+            onDismiss = { showLevelDialog = false },
+            onSave = { newLevel ->
+                selectedLevel = newLevel
+                showLevelDialog = false
+                val newSettings = settings.copy(
+                    newWordsPerDay = newWordsCount.toInt(),
+                    reminderTime = dailyReminderTime,
+                    dailyReminderEnabled = dailyReminderEnabled,
+                    dueReviewReminderEnabled = dueReviewReminderEnabled,
+                    selectedGoal = selectedGoal,
+                    selectedLevel = newLevel
+                )
+                viewModel.updateSettings(newSettings) { success ->
+                    if (success) {
+                        Toast.makeText(context, "Đã cập nhật trình độ tiếng Anh!", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -559,3 +622,268 @@ fun SettingsRow(
         )
     }
 }
+
+fun getGoalName(id: String): String {
+    return when (id.lowercase()) {
+        "ielts" -> "IELTS"
+        "toeic" -> "TOEIC"
+        "com" -> "Giao tiếp"
+        "work" -> "Công việc"
+        "travel" -> "Du lịch"
+        else -> "Khác"
+    }
+}
+
+fun getLevelNameEn(code: String): String {
+    return when (code.uppercase()) {
+        "A1" -> "Beginner"
+        "A2" -> "Elementary"
+        "B1" -> "Intermediate"
+        "B2" -> "Upper Inter."
+        "C1" -> "Advanced"
+        "C2" -> "Proficient"
+        else -> code
+    }
+}
+
+@Composable
+fun GoalSelectionDialog(
+    currentGoal: String,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit
+) {
+    var selected by remember { mutableStateOf(currentGoal) }
+    val goals = listOf(
+        GoalItem("ielts", "IELTS", Icons.Default.School),
+        GoalItem("toeic", "TOEIC", Icons.Default.WorkspacePremium),
+        GoalItem("com", "Giao tiếp", Icons.Default.Forum),
+        GoalItem("work", "Công việc", Icons.Default.Work),
+        GoalItem("travel", "Du lịch", Icons.Default.FlightTakeoff),
+        GoalItem("other", "Khác", Icons.Default.MoreHoriz)
+    )
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "Chọn mục tiêu học tập",
+                fontWeight = FontWeight.Bold,
+                fontSize = 20.sp,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "Lựa chọn mục tiêu để chúng tôi tối ưu lộ trình cho bạn.",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(260.dp)
+                ) {
+                    items(goals) { goal ->
+                        val isSelected = selected == goal.id
+                        Card(
+                            onClick = { selected = goal.id },
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(
+                                1.dp,
+                                if (isSelected) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                            ),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f)
+                                else MaterialTheme.colorScheme.surface
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(80.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.fillMaxSize(),
+                                verticalArrangement = Arrangement.Center,
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Icon(
+                                    imageVector = goal.icon,
+                                    contentDescription = null,
+                                    tint = if (isSelected) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = goal.title,
+                                    fontSize = 13.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onSave(selected) },
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text("Lưu")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Hủy")
+            }
+        },
+        shape = RoundedCornerShape(20.dp)
+    )
+}
+
+@Composable
+fun LevelSelectionDialog(
+    currentLevel: String,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit
+) {
+    var selected by remember { mutableStateOf(currentLevel) }
+    val levels = listOf(
+        LevelItem("A1", "Beginner", "Sơ cấp"),
+        LevelItem("A2", "Elementary", "Cơ bản"),
+        LevelItem("B1", "Intermediate", "Trung cấp"),
+        LevelItem("B2", "Upper Inter.", "Trung cấp trên"),
+        LevelItem("C1", "Advanced", "Cao cấp"),
+        LevelItem("C2", "Proficient", "Thành thạo")
+    )
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "Chọn trình độ tiếng Anh",
+                fontWeight = FontWeight.Bold,
+                fontSize = 20.sp,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "Lựa chọn trình độ sát nhất với năng lực hiện tại của bạn.",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(260.dp)
+                ) {
+                    items(levels) { level ->
+                        val isSelected = selected == level.code
+                        Card(
+                            onClick = { selected = level.code },
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(
+                                1.dp,
+                                if (isSelected) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                            ),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f)
+                                else MaterialTheme.colorScheme.surface
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(80.dp)
+                        ) {
+                            Box(modifier = Modifier.fillMaxSize()) {
+                                if (isSelected) {
+                                    Icon(
+                                        imageVector = Icons.Default.CheckCircle,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier
+                                            .size(16.dp)
+                                            .align(Alignment.TopEnd)
+                                            .offset(x = (-8).dp, y = 8.dp)
+                                    )
+                                }
+                                Column(
+                                    modifier = Modifier.fillMaxSize(),
+                                    verticalArrangement = Arrangement.Center,
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text(
+                                        text = level.code,
+                                        fontSize = 20.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isSelected) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = level.nameEn,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = level.nameVi,
+                                        fontSize = 10.sp,
+                                        color = MaterialTheme.colorScheme.outline
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onSave(selected) },
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text("Lưu")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Hủy")
+            }
+        },
+        shape = RoundedCornerShape(20.dp)
+    )
+}
+

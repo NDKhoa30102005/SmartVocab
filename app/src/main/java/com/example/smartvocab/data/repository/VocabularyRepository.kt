@@ -41,6 +41,7 @@ interface VocabularyRepository {
     suspend fun deleteVocabularySet(setId: String): Result<Unit>
     fun getWords(setId: String): Flow<List<VocabularyWord>>
     suspend fun addWord(word: VocabularyWord): Result<Unit>
+    suspend fun addWords(words: List<VocabularyWord>): Result<Unit>
     suspend fun updateWord(word: VocabularyWord): Result<Unit>
     suspend fun deleteWord(setId: String, wordId: String): Result<Unit>
     suspend fun getVocabularySetById(setId: String): VocabularySet?
@@ -200,6 +201,55 @@ class FirestoreVocabularyRepository : VocabularyRepository {
         val finalWord = word.copy(id = docRef.id)
         docRef.set(finalWord).await()
         updateSetStats(finalWord.setId)
+    }
+
+    override suspend fun addWords(words: List<VocabularyWord>): Result<Unit> = runCatching {
+        if (words.isEmpty()) return@runCatching
+        val setId = words.first().setId
+        
+        // Fetch all existing words in this set to check for duplicates
+        val existingWordsSnapshot = firestore.collection("vocabulary_words")
+            .whereEqualTo("setId", setId)
+            .get()
+            .await()
+            
+        val existingWordsMap = existingWordsSnapshot.documents.mapNotNull { doc ->
+            doc.toObject(VocabularyWord::class.java)?.copy(id = doc.id)
+        }.associateBy { it.term.trim().lowercase() }
+        
+        val currentExistingMap = existingWordsMap.toMutableMap()
+        val batch = firestore.batch()
+        
+        for (word in words) {
+            val normalizedTerm = word.term.trim().lowercase()
+            val existingWord = currentExistingMap[normalizedTerm]
+            
+            val docRef = if (existingWord != null) {
+                firestore.collection("vocabulary_words").document(existingWord.id)
+            } else {
+                firestore.collection("vocabulary_words").document()
+            }
+            
+            val finalWord = if (existingWord != null) {
+                word.copy(
+                    id = existingWord.id,
+                    isLearned = existingWord.isLearned,
+                    userId = existingWord.userId,
+                    createdAt = existingWord.createdAt
+                )
+            } else {
+                word.copy(id = docRef.id)
+            }
+            
+            if (existingWord == null) {
+                currentExistingMap[normalizedTerm] = finalWord
+            }
+            
+            batch.set(docRef, finalWord)
+        }
+        
+        batch.commit().await()
+        updateSetStats(setId)
     }
 
     override suspend fun updateWord(word: VocabularyWord): Result<Unit> = runCatching {

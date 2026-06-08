@@ -61,6 +61,28 @@ class VocabSetDetailViewModel : ViewModel() {
     val isWordEditMode: Boolean
         get() = editingWordId != null
 
+    // Form inputs for Bulk Import
+    val importText = mutableStateOf("")
+    
+    private val _isImporting = mutableStateOf(false)
+    val isImporting: State<Boolean> = _isImporting
+
+    private val _importError = mutableStateOf<String?>(null)
+    val importError: State<String?> = _importError
+
+    private val _isImported = mutableStateOf(false)
+    val isImported: State<Boolean> = _isImported
+
+    // Form inputs for CSV Import
+    private val _isImportingCsv = mutableStateOf(false)
+    val isImportingCsv: State<Boolean> = _isImportingCsv
+
+    private val _csvImportError = mutableStateOf<String?>(null)
+    val csvImportError: State<String?> = _csvImportError
+
+    private val _isCsvImported = mutableStateOf(false)
+    val isCsvImported: State<Boolean> = _isCsvImported
+
     fun loadSetDetails(setId: String) {
         _isLoading.value = true
         _errorMessage.value = null
@@ -234,6 +256,192 @@ class VocabSetDetailViewModel : ViewModel() {
         _saveWordError.value = null
         _isWordSaved.value = false
         editingWordId = null
+    }
+
+    fun resetImportForm() {
+        importText.value = ""
+        _isImporting.value = false
+        _importError.value = null
+        _isImported.value = false
+    }
+
+    fun parseImportText(text: String, setId: String, userId: String): List<VocabularyWord> {
+        val wordsList = mutableListOf<VocabularyWord>()
+        val lines = text.split("\n")
+        for (line in lines) {
+            if (line.isBlank()) continue
+            val parts = line.split(Regex("[:\\-–—]"), 2)
+            if (parts.size >= 2) {
+                val termStr = parts[0].trim()
+                val defStr = parts[1].trim()
+                if (termStr.isNotBlank() && defStr.isNotBlank()) {
+                    wordsList.add(
+                        VocabularyWord(
+                            setId = setId,
+                            term = termStr,
+                            definition = defStr,
+                            userId = userId
+                        )
+                    )
+                }
+            }
+        }
+        return wordsList
+    }
+
+    fun importWords(setId: String) {
+        val text = importText.value.trim()
+        if (text.isBlank()) {
+            _importError.value = "Nội dung nhập không được để trống"
+            return
+        }
+        val userId = auth.currentUser?.uid ?: return
+        _isImporting.value = true
+        _importError.value = null
+
+        viewModelScope.launch {
+            try {
+                val parsedWords = parseImportText(text, setId, userId)
+                if (parsedWords.isEmpty()) {
+                    _importError.value = "Không tìm thấy từ vựng hợp lệ. Hãy kiểm tra định dạng."
+                    _isImporting.value = false
+                    return@launch
+                }
+                val result = repository.addWords(parsedWords)
+                _isImporting.value = false
+                if (result.isSuccess) {
+                    _isImported.value = true
+                } else {
+                    _importError.value = result.exceptionOrNull()?.localizedMessage ?: "Import thất bại"
+                }
+            } catch (e: Exception) {
+                _isImporting.value = false
+                _importError.value = "Lỗi phân tích cú pháp: ${e.localizedMessage}"
+            }
+        }
+    }
+
+    fun resetCsvImportForm() {
+        _isImportingCsv.value = false
+        _csvImportError.value = null
+        _isCsvImported.value = false
+    }
+
+    fun parseCsvLine(line: String): List<String> {
+        val result = mutableListOf<String>()
+        val currentField = StringBuilder()
+        var inQuotes = false
+        var i = 0
+        while (i < line.length) {
+            val c = line[i]
+            if (c == '"') {
+                inQuotes = !inQuotes
+            } else if (c == ',' && !inQuotes) {
+                result.add(currentField.toString().trim())
+                currentField.setLength(0)
+            } else {
+                currentField.append(c)
+            }
+            i++
+        }
+        result.add(currentField.toString().trim())
+        return result
+    }
+
+    fun importCsv(inputStream: java.io.InputStream, setId: String) {
+        val userId = auth.currentUser?.uid ?: return
+        _isImportingCsv.value = true
+        _csvImportError.value = null
+
+        viewModelScope.launch {
+            try {
+                val wordsList = mutableListOf<VocabularyWord>()
+                val reader = java.io.BufferedReader(java.io.InputStreamReader(inputStream, "UTF-8"))
+                var line = reader.readLine()
+                var isHeader = true
+                while (line != null) {
+                    if (isHeader) {
+                        isHeader = false
+                        line = reader.readLine()
+                        continue
+                    }
+                    if (line.isNotBlank()) {
+                        val columns = parseCsvLine(line)
+                        if (columns.isNotEmpty()) {
+                            val termStr = columns.getOrNull(0) ?: ""
+                            val definitionStr = columns.getOrNull(3) ?: ""
+                            if (termStr.isNotBlank() && definitionStr.isNotBlank()) {
+                                val word = VocabularyWord(
+                                    setId = setId,
+                                    term = termStr,
+                                    ipa = columns.getOrNull(1) ?: "",
+                                    partOfSpeech = columns.getOrNull(2) ?: "Danh từ",
+                                    definition = definitionStr,
+                                    example = columns.getOrNull(4) ?: "",
+                                    exampleTranslation = columns.getOrNull(5) ?: "",
+                                    synonyms = columns.getOrNull(6) ?: "",
+                                    antonyms = columns.getOrNull(7) ?: "",
+                                    collocations = columns.getOrNull(8) ?: "",
+                                    notes = columns.getOrNull(9) ?: "",
+                                    userId = userId
+                                )
+                                wordsList.add(word)
+                            }
+                        }
+                    }
+                    line = reader.readLine()
+                }
+                reader.close()
+
+                if (wordsList.isEmpty()) {
+                    _csvImportError.value = "Không tìm thấy từ vựng hợp lệ nào trong file CSV. Vui lòng kiểm tra lại cấu trúc cột."
+                    _isImportingCsv.value = false
+                    return@launch
+                }
+
+                val result = repository.addWords(wordsList)
+                _isImportingCsv.value = false
+                if (result.isSuccess) {
+                    _isCsvImported.value = true
+                } else {
+                    _csvImportError.value = result.exceptionOrNull()?.localizedMessage ?: "Nhập từ file CSV thất bại"
+                }
+            } catch (e: Exception) {
+                _isImportingCsv.value = false
+                _csvImportError.value = "Lỗi đọc file: ${e.localizedMessage}"
+            }
+        }
+    }
+
+    fun generateCsvData(): String {
+        val sb = java.lang.StringBuilder()
+        // Header
+        sb.append("Từ vựng,Phiên âm,Loại từ,Nghĩa tiếng Việt,Ví dụ,Dịch ví dụ,Đồng nghĩa,Trái nghĩa,Cụm từ đi kèm,Ghi chú\n")
+        
+        for (word in _words.value) {
+            val row = listOf(
+                word.term,
+                word.ipa,
+                word.partOfSpeech,
+                word.definition,
+                word.example,
+                word.exampleTranslation,
+                word.synonyms,
+                word.antonyms,
+                word.collocations,
+                word.notes
+            ).joinToString(",") { formatCsvField(it) }
+            sb.append(row).append("\n")
+        }
+        return sb.toString()
+    }
+
+    private fun formatCsvField(value: String): String {
+        if (value.contains(",") || value.contains("\"") || value.contains("\n") || value.contains("\r")) {
+            val escaped = value.replace("\"", "\"\"")
+            return "\"$escaped\""
+        }
+        return value
     }
 
     override fun onCleared() {

@@ -182,6 +182,34 @@ fun SettingsTab(
                 }
             }
 
+            // 2. Learning Goal & Level Card (Mục tiêu học tập)
+            SettingsSectionCard(
+                title = "Mục tiêu học tập",
+                icon = Icons.Default.Flag
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    SettingsRow(
+                        label = "Mục tiêu hiện tại",
+                        value = "IELTS",
+                        onClick = {
+                            Toast.makeText(context, "Tính năng thay đổi mục tiêu đang phát triển", Toast.LENGTH_SHORT).show()
+                        }
+                    )
+                    
+                    Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                    
+                    SettingsRow(
+                        label = "Trình độ hiện tại",
+                        value = summary.levelEstimate,
+                        onClick = {
+                            Toast.makeText(context, "Tính năng thay đổi trình độ đang phát triển", Toast.LENGTH_SHORT).show()
+                        }
+                    )
+                }
+            }
+
             // 3. Learning Pace Settings
             SettingsSectionCard(
                 title = "Tốc độ hàng ngày",

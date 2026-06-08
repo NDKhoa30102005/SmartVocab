@@ -36,7 +36,7 @@ import kotlinx.coroutines.launch
 import com.example.smartvocab.viewmodel.AuthViewModel
 
 // TODO: Replace with your actual Web Client ID from Firebase Console
-private const val WEB_CLIENT_ID = "YOUR_WEB_CLIENT_ID_HERE"
+private const val WEB_CLIENT_ID = "112418830390-12eg7i8oq8grfh1tsqnlmmpl7nanpnr2.apps.googleusercontent.com"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

@@ -34,26 +34,8 @@ fun WelcomeScreen(navController: NavHostController) {
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            .statusBarsPadding()
     ) {
-        // Header
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp)
-                .statusBarsPadding(),
-            horizontalArrangement = Arrangement.End
-        ) {
-            TextButton(
-                onClick = { navController.navigate(Screen.Login.route) }
-            ) {
-                Text(
-                    text = "Bỏ qua",
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp
-                )
-            }
-        }
 
         // Content
         Column(
@@ -118,16 +100,6 @@ fun WelcomeScreen(navController: NavHostController) {
             )
 
             Spacer(modifier = Modifier.height(40.dp))
-
-            // Pagination dots
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(modifier = Modifier.size(width = 32.dp, height = 8.dp).background(MaterialTheme.colorScheme.primary, CircleShape))
-                Box(modifier = Modifier.size(8.dp).background(MaterialTheme.colorScheme.outlineVariant, CircleShape))
-                Box(modifier = Modifier.size(8.dp).background(MaterialTheme.colorScheme.outlineVariant, CircleShape))
-            }
         }
 
         // Action Button
@@ -139,7 +111,7 @@ fun WelcomeScreen(navController: NavHostController) {
         ) {
             PrimaryButton(
                 text = "Tiếp tục",
-                onClick = { navController.navigate(Screen.Goal.route) },
+                onClick = { navController.navigate(Screen.Login.route) },
                 icon = Icons.AutoMirrored.Filled.ArrowForward
             )
         }

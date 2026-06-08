@@ -15,6 +15,5 @@ data class LearningSettings(
     @field:JvmField val dailyReminderEnabled: Boolean = true,
     @field:JvmField val dueReviewReminderEnabled: Boolean = true,
     @field:JvmField val pushNotificationEnabled: Boolean = true,
-    @field:JvmField val emailNotificationEnabled: Boolean = false,
     val updatedAt: Timestamp? = null
 )

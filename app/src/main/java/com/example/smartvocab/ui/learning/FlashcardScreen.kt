@@ -54,6 +54,7 @@ import com.example.smartvocab.viewmodel.FlashcardViewModel
 fun FlashcardScreen(
     navController: NavHostController,
     setId: String?,
+    mode: String? = null,
     viewModel: FlashcardViewModel = viewModel()
 ) {
     val context = LocalContext.current
@@ -67,8 +68,8 @@ fun FlashcardScreen(
     val againCount = uiState.againCount
     val goodCount = uiState.goodCount
 
-    LaunchedEffect(setId) {
-        viewModel.loadWords(setId)
+    LaunchedEffect(setId, mode) {
+        viewModel.loadWords(setId, mode)
     }
 
     val currentWord = words.getOrNull(currentIndex)

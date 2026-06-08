@@ -10,6 +10,7 @@ import androidx.core.app.NotificationCompat
 import androidx.work.*
 import com.example.smartvocab.MainActivity
 import com.example.smartvocab.data.model.LearningSettings
+import com.example.smartvocab.data.model.AppNotification
 import com.google.android.gms.tasks.Task
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
@@ -48,7 +49,8 @@ class DailyReminderWorker(val context: Context, params: WorkerParameters) : Coro
             sendNotification(
                 context,
                 "Đã đến giờ học rồi! 📚",
-                "Hãy dành 5 phút mở SmartVocab để tiếp tục mở rộng vốn từ của bạn hôm nay nhé."
+                "Hãy dành 5 phút mở SmartVocab để tiếp tục mở rộng vốn từ của bạn hôm nay nhé.",
+                "REVIEW"
             )
         }
         
@@ -96,7 +98,8 @@ class DueReviewReminderWorker(val context: Context, params: WorkerParameters) : 
             sendNotification(
                 context,
                 "Tiếp tục học từ vựng thôi! ⏱️",
-                "Bạn còn $remainingCount từ vựng chưa thuộc trong các bộ từ. Hãy vào học ngay nhé!"
+                "Bạn còn $remainingCount từ vựng chưa thuộc trong các bộ từ. Hãy vào học ngay nhé!",
+                "REVIEW"
             )
         }
         
@@ -104,7 +107,26 @@ class DueReviewReminderWorker(val context: Context, params: WorkerParameters) : 
     }
 }
 
-private fun sendNotification(context: Context, title: String, message: String) {
+private suspend fun sendNotification(context: Context, title: String, message: String, type: String) {
+    val auth = FirebaseAuth.getInstance()
+    val userId = auth.currentUser?.uid
+    if (userId != null) {
+        try {
+            val db = FirebaseFirestore.getInstance()
+            val newNotif = AppNotification(
+                userId = userId,
+                title = title,
+                message = message,
+                type = type,
+                isRead = false,
+                createdAt = Timestamp.now()
+            )
+            db.collection("notifications").add(newNotif).await()
+        } catch (e: Exception) {
+            // Bỏ qua lỗi Firestore nếu offline
+        }
+    }
+
     val channelId = "smartvocab_reminders"
     val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     

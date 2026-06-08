@@ -3,6 +3,7 @@ package com.example.smartvocab.data.repository
 import com.example.smartvocab.data.model.AppNotification
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import com.google.firebase.Timestamp
 
 /**
  * Lớp Repository kết nối trực tiếp với Firebase Firestore để quản lý danh sách thông báo.
@@ -22,8 +23,21 @@ class NotificationRepository {
                 .orderBy("createdAt", Query.Direction.DESCENDING)
                 .get()
                 .await()
-            snapshot.documents.mapNotNull { doc ->
+            val list = snapshot.documents.mapNotNull { doc ->
                 doc.toObject(AppNotification::class.java)?.copy(id = doc.id)
+            }
+            if (list.isEmpty()) {
+                seedMockNotifications(userId)
+                val newSnapshot = firestore.collection("notifications")
+                    .whereEqualTo("userId", userId)
+                    .orderBy("createdAt", Query.Direction.DESCENDING)
+                    .get()
+                    .await()
+                newSnapshot.documents.mapNotNull { doc ->
+                    doc.toObject(AppNotification::class.java)?.copy(id = doc.id)
+                }
+            } else {
+                list
             }
         } catch (e: Exception) {
             // Trường hợp chưa tạo index Firestore cho orderBy, thực hiện sắp xếp cục bộ để tránh lỗi truy vấn
@@ -32,12 +46,55 @@ class NotificationRepository {
                     .whereEqualTo("userId", userId)
                     .get()
                     .await()
-                snapshot.documents.mapNotNull { doc ->
+                val list = snapshot.documents.mapNotNull { doc ->
                     doc.toObject(AppNotification::class.java)?.copy(id = doc.id)
                 }.sortedByDescending { it.createdAt }
+                if (list.isEmpty()) {
+                    seedMockNotifications(userId)
+                    val newSnapshot = firestore.collection("notifications")
+                        .whereEqualTo("userId", userId)
+                        .get()
+                        .await()
+                    newSnapshot.documents.mapNotNull { doc ->
+                        doc.toObject(AppNotification::class.java)?.copy(id = doc.id)
+                    }.sortedByDescending { it.createdAt }
+                } else {
+                    list
+                }
             } catch (ex: Exception) {
                 emptyList()
             }
+        }
+    }
+
+    private suspend fun seedMockNotifications(userId: String) {
+        try {
+            val seedList = listOf(
+                AppNotification(
+                    userId = userId,
+                    title = "Nhắc nhở ôn tập hôm nay",
+                    message = "Đã đến lúc ôn tập rồi! Có các từ vựng đang chờ bạn củng cố trí nhớ.",
+                    type = "REVIEW",
+                    isRead = false,
+                    createdAt = Timestamp.now()
+                ),
+                AppNotification(
+                    userId = userId,
+                    title = "Cập nhật hệ thống thành công",
+                    message = "Chúng tôi vừa tối ưu hóa danh sách từ vựng IELTS Academic và cập nhật thêm ví dụ thực tế.",
+                    type = "SYSTEM",
+                    isRead = false,
+                    createdAt = Timestamp(java.util.Date(System.currentTimeMillis() - 86400000)) // 1 ngày trước
+                )
+            )
+            val batch = firestore.batch()
+            for (notif in seedList) {
+                val docRef = firestore.collection("notifications").document()
+                batch.set(docRef, notif)
+            }
+            batch.commit().await()
+        } catch (e: Exception) {
+            // Bỏ qua lỗi seed
         }
     }
 

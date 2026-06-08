@@ -5,7 +5,6 @@ import com.example.smartvocab.data.model.DailyActivity
 import com.example.smartvocab.data.model.LearningSettings
 import com.example.smartvocab.data.model.LearningProgress
 import com.example.smartvocab.data.model.ReviewLog
-import com.example.smartvocab.data.Achievement
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.Timestamp
 import java.text.SimpleDateFormat
@@ -71,131 +70,7 @@ class ProgressRepository {
         return streak
     }
 
-    /**
-     * Cập nhật thành tựu dựa trên dữ liệu thật của người dùng
-     */
-    suspend fun updateAchievements(userId: String) {
-        try {
-            val setsSnapshot = firestore.collection("vocabulary_sets")
-                .whereEqualTo("userId", userId)
-                .get()
-                .await()
-            val customSetsCount = setsSnapshot.size()
-            val firstSetUnlocked = customSetsCount >= 1
-            
-            val dailyPlansSnapshot = firestore.collection("daily_learning_plans")
-                .whereEqualTo("userId", userId)
-                .get()
-                .await()
-            val activeDates = dailyPlansSnapshot.documents.filter { doc ->
-                val learned = doc.getLong("learnedWords") ?: 0L
-                val reviewed = doc.getLong("reviewedWords") ?: 0L
-                val answers = doc.getLong("totalAnswers") ?: 0L
-                learned > 0L || reviewed > 0L || answers > 0L
-            }.mapNotNull { it.getString("date") }
-            val streak = calculateStreak(activeDates)
-            
-            val progressSnapshot = firestore.collection("learning_progress")
-                .whereEqualTo("userId", userId)
-                .whereEqualTo("status", "MASTERED")
-                .get()
-                .await()
-            val masteredCount = progressSnapshot.size()
-            
-            val practiceResultsSnapshot = firestore.collection("practice_results")
-                .whereEqualTo("userId", userId)
-                .get()
-                .await()
-            val hasPerfectQuiz = practiceResultsSnapshot.documents.any { doc ->
-                val score = doc.getLong("score") ?: 0L
-                val total = doc.getLong("totalQuestions") ?: 0L
-                score > 0L && score == total
-            }
-            
-            val maxLearnedInDay = dailyPlansSnapshot.documents.mapNotNull { it.getLong("learnedWords")?.toInt() }.maxOrNull() ?: 0
-            val speedLearnerUnlocked = maxLearnedInDay >= 50
-            
-            val batch = firestore.batch()
-            
-            val list = listOf(
-                Achievement(
-                    id = "first_set",
-                    title = "Nhà sáng tạo",
-                    description = "Mở khóa khi tạo ít nhất một bộ từ vựng cá nhân",
-                    icon = "workspace_premium",
-                    progress = if (firstSetUnlocked) 1f else 0f,
-                    currentVal = customSetsCount,
-                    targetVal = 1,
-                    isUnlocked = firstSetUnlocked,
-                    userId = userId
-                ),
-                Achievement(
-                    id = "streak_7",
-                    title = "Bền bỉ 7 ngày",
-                    description = "Đạt chuỗi học tập liên tiếp 7 ngày",
-                    icon = "local_fire_department",
-                    progress = (streak.toFloat() / 7f).coerceIn(0f, 1f),
-                    currentVal = streak,
-                    targetVal = 7,
-                    isUnlocked = streak >= 7,
-                    userId = userId
-                ),
-                Achievement(
-                    id = "streak_30",
-                    title = "Chăm chỉ 30 ngày",
-                    description = "Đạt chuỗi học tập liên tiếp 30 ngày",
-                    icon = "emoji_events",
-                    progress = (streak.toFloat() / 30f).coerceIn(0f, 1f),
-                    currentVal = streak,
-                    targetVal = 30,
-                    isUnlocked = streak >= 30,
-                    userId = userId
-                ),
-                Achievement(
-                    id = "word_master",
-                    title = "Vua từ vựng",
-                    description = "Học và làm chủ 300 từ",
-                    icon = "workspace_premium",
-                    progress = (masteredCount.toFloat() / 300f).coerceIn(0f, 1f),
-                    currentVal = masteredCount,
-                    targetVal = 300,
-                    isUnlocked = masteredCount >= 300,
-                    userId = userId
-                ),
-                Achievement(
-                    id = "perfect_quiz",
-                    title = "Bách phát bách trúng",
-                    description = "Đạt độ chính xác 100% trong bài trắc nghiệm",
-                    icon = "task_alt",
-                    progress = if (hasPerfectQuiz) 1f else 0f,
-                    currentVal = if (hasPerfectQuiz) 1 else 0,
-                    targetVal = 1,
-                    isUnlocked = hasPerfectQuiz,
-                    userId = userId
-                ),
-                Achievement(
-                    id = "speed_learner",
-                    title = "Học siêu tốc",
-                    description = "Học từ mới nhiều hơn hoặc bằng 50 từ trong một ngày",
-                    icon = "bolt",
-                    progress = (maxLearnedInDay.toFloat() / 50f).coerceIn(0f, 1f),
-                    currentVal = maxLearnedInDay,
-                    targetVal = 50,
-                    isUnlocked = speedLearnerUnlocked,
-                    userId = userId
-                )
-            )
-            
-            for (ach in list) {
-                val docRef = firestore.collection("achievements").document("${userId}_${ach.id}")
-                batch.set(docRef, ach)
-            }
-            
-            batch.commit().await()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
+
 
     /**
      * Lấy tên người dùng từ Firestore để hiển thị lời chào cá nhân hóa.
@@ -240,9 +115,8 @@ class ProgressRepository {
 
             val masteredWords = learningProgressList.count { it.status == "MASTERED" }
 
-            val now = Timestamp.now()
             val reviewDueWords = learningProgressList.count { 
-                it.status == "REVIEW" && it.nextReviewDate != null && it.nextReviewDate.seconds <= now.seconds 
+                it.status != "MASTERED" && (it.status != "NEW" || it.repetitionCount > 0)
             }
 
             // Lấy danh sách hoạt động đã được chuẩn hóa và sửa sai lệch
@@ -447,26 +321,7 @@ class ProgressRepository {
         docRef.set(finalSettings).await()
     }
 
-    /**
-     * Lấy danh sách thành tựu của người dùng từ collection top-level achievements.
-     */
-    suspend fun getAchievements(userId: String): List<Achievement> {
-        return try {
-            val snapshot = firestore.collection("achievements")
-                .whereEqualTo("userId", userId)
-                .get()
-                .await()
-            if (snapshot.isEmpty) {
-                emptyList()
-            } else {
-                snapshot.documents.mapNotNull { doc ->
-                    doc.toObject(Achievement::class.java)?.copy(id = doc.id)
-                }
-            }
-        } catch (e: Exception) {
-            emptyList()
-        }
-    }
+
 
     /**
      * Helper xác định thứ tự các thứ trong tuần để hiển thị biểu đồ từ Thứ 2 đến Chủ nhật.

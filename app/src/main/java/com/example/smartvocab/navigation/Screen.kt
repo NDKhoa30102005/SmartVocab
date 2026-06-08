@@ -31,10 +31,11 @@ sealed class Screen(val route: String) {
         }
     }
     
-    object FlashcardLearning : Screen("learning?setId={setId}") {
-        fun createRoute(setId: String? = null): String {
+    object FlashcardLearning : Screen("learning?setId={setId}&mode={mode}") {
+        fun createRoute(setId: String? = null, mode: String? = null): String {
             val sId = setId ?: "null"
-            return "learning?setId=$sId"
+            val m = mode ?: "null"
+            return "learning?setId=$sId&mode=$m"
         }
     }
     

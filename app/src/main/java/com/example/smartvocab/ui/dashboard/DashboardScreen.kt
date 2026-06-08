@@ -397,7 +397,7 @@ fun DashboardTab(
                             .height(140.dp)
                             .clip(RoundedCornerShape(24.dp))
                             .background(MaterialTheme.colorScheme.secondaryContainer)
-                            .clickable { parentNavController.navigate(Screen.FlashcardLearning.createRoute()) }
+                            .clickable { parentNavController.navigate(Screen.FlashcardLearning.createRoute(mode = "review")) }
                             .padding(16.dp)
                     ) {
                         Column(

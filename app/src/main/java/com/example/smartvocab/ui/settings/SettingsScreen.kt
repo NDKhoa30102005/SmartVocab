@@ -44,22 +44,16 @@ fun SettingsTab(
     val email = FirebaseAuth.getInstance().currentUser?.email ?: "student@example.com"
 
     var newWordsCount by remember { mutableStateOf(10f) }
-    var reviewWordsCount by remember { mutableStateOf(20f) }
     var dailyReminderTime by remember { mutableStateOf("20:00") }
     var dailyReminderEnabled by remember { mutableStateOf(true) }
     var dueReviewReminderEnabled by remember { mutableStateOf(true) }
-    var pushEnabled by remember { mutableStateOf(true) }
-    var emailEnabled by remember { mutableStateOf(false) }
 
     // Đồng bộ hóa từ Firestore sang local state khi tải xong
     LaunchedEffect(settings) {
         newWordsCount = settings.newWordsPerDay.toFloat()
-        reviewWordsCount = settings.reviewWordsPerDay.toFloat()
         dailyReminderTime = settings.reminderTime
         dailyReminderEnabled = settings.dailyReminderEnabled
         dueReviewReminderEnabled = settings.dueReviewReminderEnabled
-        pushEnabled = settings.pushNotificationEnabled
-        emailEnabled = settings.emailNotificationEnabled
     }
 
     Column(
@@ -188,26 +182,6 @@ fun SettingsTab(
                 }
             }
 
-            // 2. Learning Goals Section
-            SettingsSectionCard(
-                title = "Mục tiêu học tập",
-                icon = Icons.Default.Flag
-            ) {
-                // Goal Row
-                SettingsRow(
-                    label = "Mục tiêu hiện tại",
-                    value = "IELTS",
-                    onClick = { parentNavController.navigate(Screen.Goal.route) }
-                )
-                Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
-                // Level Row
-                SettingsRow(
-                    label = "Trình độ hiện tại",
-                    value = summary.levelEstimate,
-                    onClick = { parentNavController.navigate(Screen.Level.route) }
-                )
-            }
-
             // 3. Learning Pace Settings
             SettingsSectionCard(
                 title = "Tốc độ hàng ngày",
@@ -240,37 +214,6 @@ fun SettingsTab(
                         value = newWordsCount,
                         onValueChange = { newWordsCount = it },
                         valueRange = 1f..50f,
-                        colors = SliderDefaults.colors(
-                            activeTrackColor = MaterialTheme.colorScheme.primary,
-                            thumbColor = MaterialTheme.colorScheme.primary
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Slider 2: Review goal
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Mục tiêu ôn tập mỗi ngày",
-                            fontSize = 14.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = "${reviewWordsCount.toInt()}",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    Slider(
-                        value = reviewWordsCount,
-                        onValueChange = { reviewWordsCount = it },
-                        valueRange = 10f..100f,
                         colors = SliderDefaults.colors(
                             activeTrackColor = MaterialTheme.colorScheme.primary,
                             thumbColor = MaterialTheme.colorScheme.primary
@@ -315,8 +258,18 @@ fun SettingsTab(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable {
-                            // Dialog for time picker placeholder
-                            dailyReminderTime = if (dailyReminderTime == "20:00") "09:00" else "20:00"
+                            val calendar = java.util.Calendar.getInstance()
+                            val hour = calendar.get(java.util.Calendar.HOUR_OF_DAY)
+                            val minute = calendar.get(java.util.Calendar.MINUTE)
+                            android.app.TimePickerDialog(
+                                context,
+                                { _, selectedHour, selectedMinute ->
+                                    dailyReminderTime = String.format("%02d:%02d", selectedHour, selectedMinute)
+                                },
+                                hour,
+                                minute,
+                                true
+                            ).show()
                         }
                         .padding(16.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -371,55 +324,6 @@ fun SettingsTab(
                     )
                 }
 
-                Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
-
-                // Push Switch
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Thông báo Push",
-                        fontSize = 15.sp,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Switch(
-                        checked = pushEnabled,
-                        onCheckedChange = { pushEnabled = it },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = Color.White,
-                            checkedTrackColor = MaterialTheme.colorScheme.primary
-                        )
-                    )
-                }
-
-                Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
-
-                // Email Switch
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Cập nhật qua Email",
-                        fontSize = 15.sp,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Switch(
-                        checked = emailEnabled,
-                        onCheckedChange = { emailEnabled = it },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = Color.White,
-                            checkedTrackColor = MaterialTheme.colorScheme.primary
-                        )
-                    )
-                }
             }
 
             // Nút Lưu cài đặt
@@ -427,12 +331,9 @@ fun SettingsTab(
                 onClick = {
                     val newSettings = settings.copy(
                         newWordsPerDay = newWordsCount.toInt(),
-                        reviewWordsPerDay = reviewWordsCount.toInt(),
                         reminderTime = dailyReminderTime,
                         dailyReminderEnabled = dailyReminderEnabled,
-                        dueReviewReminderEnabled = dueReviewReminderEnabled,
-                        pushNotificationEnabled = pushEnabled,
-                        emailNotificationEnabled = emailEnabled
+                        dueReviewReminderEnabled = dueReviewReminderEnabled
                     )
                     viewModel.updateSettings(newSettings) { success ->
                         if (success) {

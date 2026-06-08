@@ -299,20 +299,7 @@ class FirestoreVocabularyRepository : VocabularyRepository {
                 newIntervalDays = 1
             }
 
-            var newStatus = currentProgress.status
-            if (currentProgress.status == "NEW") {
-                newStatus = if (isCorrect) "REVIEW" else "LEARNING"
-            } else if (currentProgress.status == "LEARNING") {
-                if (isCorrect) newStatus = "REVIEW"
-            } else if (currentProgress.status == "REVIEW") {
-                if (!isCorrect) {
-                    newStatus = "LEARNING"
-                } else if (newRepetitionCount >= 4) {
-                    newStatus = "MASTERED"
-                }
-            } else if (currentProgress.status == "MASTERED") {
-                if (!isCorrect) newStatus = "LEARNING"
-            }
+            val newStatus = if (isCorrect) "MASTERED" else "LEARNING"
 
             val nextReview = Timestamp(now.seconds + newIntervalDays * 24 * 3600, 0)
 
@@ -391,7 +378,6 @@ class FirestoreVocabularyRepository : VocabularyRepository {
             }
 
             batch.commit().await()
-            // ProgressRepository().updateAchievements(userId)
             Unit
         }
     }
@@ -450,7 +436,6 @@ class FirestoreVocabularyRepository : VocabularyRepository {
                 transaction.update(setRef, "lastStudiedAt", now)
             }
         }.await()
-        // ProgressRepository().updateAchievements(userId)
     }
 
     override suspend fun updateFlashcardProgress(setId: String, wordId: String, rating: String): Result<Unit> {
@@ -480,8 +465,6 @@ class FirestoreVocabularyRepository : VocabularyRepository {
             completedAt = now
         )
         docRef.set(result).await()
-        
-        // ProgressRepository().updateAchievements(userId)
     }
 
     private suspend fun updateSetStats(setId: String) {

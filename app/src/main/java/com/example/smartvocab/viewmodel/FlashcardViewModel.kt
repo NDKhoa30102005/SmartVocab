@@ -35,14 +35,67 @@ class FlashcardViewModel : ViewModel() {
 
     private var currentSetId: String? = null
 
-    fun loadWords(setId: String?) {
+    fun loadWords(setId: String?, mode: String? = null) {
         currentSetId = setId
         _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null, currentIndex = 0, isFlipped = false)
 
         val userId = auth.currentUser?.uid ?: ""
         
         viewModelScope.launch {
-            if (setId.isNullOrBlank() || setId == "null") {
+            if (mode == "review") {
+                firestore.collection("learning_progress")
+                    .whereEqualTo("userId", userId)
+                    .get()
+                    .addOnSuccessListener { progressSnapshot ->
+                        // Bug fix 1: lọc bỏ wordId rỗng ("") để tránh match sai
+                        val reviewWordIds = progressSnapshot.documents.mapNotNull { doc ->
+                            val status = doc.getString("status") ?: "NEW"
+                            val repCount = doc.getLong("repetitionCount") ?: 0L
+                            val wordId = doc.getString("wordId") ?: ""
+                            val isLearned = status != "NEW" || repCount > 0L
+                            val isMastered = status == "MASTERED"
+                            if (isLearned && !isMastered && wordId.isNotBlank()) {
+                                wordId
+                            } else {
+                                null
+                            }
+                        }.toSet()
+                        
+                        if (reviewWordIds.isEmpty()) {
+                            _uiState.value = _uiState.value.copy(
+                                isLoading = false,
+                                words = emptyList()
+                            )
+                            return@addOnSuccessListener
+                        }
+                        
+                        // Bug fix 2: không filter theo userId vì từ hệ thống có userId="system"
+                        firestore.collection("vocabulary_words")
+                            .get()
+                            .addOnSuccessListener { wordsSnapshot ->
+                                val allWords = wordsSnapshot.documents.mapNotNull { doc ->
+                                    doc.toObject(VocabularyWord::class.java)?.copy(id = doc.id)
+                                }
+                                val reviewWords = allWords.filter { it.id in reviewWordIds }.sortedBy { it.createdAt }
+                                _uiState.value = _uiState.value.copy(
+                                    isLoading = false,
+                                    words = reviewWords
+                                )
+                            }
+                            .addOnFailureListener { exception ->
+                                _uiState.value = _uiState.value.copy(
+                                    isLoading = false,
+                                    errorMessage = "Lỗi khi tải từ vựng: ${exception.localizedMessage}"
+                                )
+                            }
+                    }
+                    .addOnFailureListener { exception ->
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            errorMessage = "Lỗi khi tải tiến trình: ${exception.localizedMessage}"
+                        )
+                    }
+            } else if (setId.isNullOrBlank() || setId == "null") {
                 firestore.collection("learning_progress")
                     .whereEqualTo("userId", userId)
                     .get()
@@ -60,7 +113,9 @@ class FlashcardViewModel : ViewModel() {
                         firestore.collection("vocabulary_words")
                             .get()
                             .addOnSuccessListener { wordsSnapshot ->
-                                val allWords = wordsSnapshot.toObjects(VocabularyWord::class.java)
+                                val allWords = wordsSnapshot.documents.mapNotNull { doc ->
+                                    doc.toObject(VocabularyWord::class.java)?.copy(id = doc.id)
+                                }
                                 val dueWords = allWords.filter { it.id !in learnedWordIds }.sortedBy { it.createdAt }
                                 _uiState.value = _uiState.value.copy(
                                     isLoading = false,

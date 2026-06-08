@@ -71,11 +71,17 @@ fun NavGraph(navController: NavHostController) {
                     type = NavType.StringType
                     nullable = true
                     defaultValue = "null"
+                },
+                navArgument("mode") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = "null"
                 }
             )
         ) { backStackEntry ->
             val setId = backStackEntry.arguments?.getString("setId").let { if (it == "null") null else it }
-            FlashcardScreen(navController = navController, setId = setId)
+            val mode = backStackEntry.arguments?.getString("mode").let { if (it == "null") null else it }
+            FlashcardScreen(navController = navController, setId = setId, mode = mode)
         }
 
         // Quiz Screen

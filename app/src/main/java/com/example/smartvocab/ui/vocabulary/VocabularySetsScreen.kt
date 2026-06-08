@@ -27,7 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
-import com.example.smartvocab.data.MockData
+
 import com.example.smartvocab.data.model.VocabularySet
 import com.example.smartvocab.navigation.Screen
 import com.example.smartvocab.viewmodel.VocabularySetsViewModel
@@ -41,6 +41,7 @@ fun VocabularySetsTab(
     val uiState by viewModel.uiState
     val context = LocalContext.current
     var setDeleteTarget by remember { mutableStateOf<VocabularySet?>(null) }
+    val categories = listOf("Tất cả", "IELTS", "TOEIC", "Kinh doanh", "Công nghệ", "Du lịch")
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf("Tất cả") }
 
@@ -93,7 +94,7 @@ fun VocabularySetsTab(
             contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(MockData.categories) { category ->
+            items(categories) { category ->
                 val isSelected = selectedCategory == category
                 FilterChip(
                     selected = isSelected,

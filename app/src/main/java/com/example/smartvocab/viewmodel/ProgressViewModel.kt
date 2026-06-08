@@ -7,7 +7,6 @@ import androidx.lifecycle.viewModelScope
 import com.example.smartvocab.data.model.ProgressSummary
 import com.example.smartvocab.data.model.DailyActivity
 import com.example.smartvocab.data.model.LearningSettings
-import com.example.smartvocab.data.Achievement
 import com.example.smartvocab.data.repository.ProgressRepository
 import com.google.firebase.auth.FirebaseAuth
 import java.text.SimpleDateFormat
@@ -41,8 +40,7 @@ class ProgressViewModel(
     private val _learningSettings = mutableStateOf(LearningSettings())
     val learningSettings: State<LearningSettings> = _learningSettings
 
-    private val _achievements = mutableStateOf<List<Achievement>>(emptyList())
-    val achievements: State<List<Achievement>> = _achievements
+
 
     private val _selectedPeriod = mutableStateOf(7)
     val selectedPeriod: State<Int> = _selectedPeriod
@@ -105,7 +103,6 @@ class ProgressViewModel(
                 _progressSummary.value = repository.getProgressSummary(currentUid)
                 _dailyActivities.value = repository.getDailyActivity(currentUid)
                 _learningSettings.value = repository.getLearningSettings(currentUid)
-                _achievements.value = repository.getAchievements(currentUid)
             } catch (e: Exception) {
                 _errorMessage.value = "Lỗi tải tiến trình: ${e.localizedMessage}"
             } finally {

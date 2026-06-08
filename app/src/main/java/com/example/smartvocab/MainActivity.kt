@@ -28,14 +28,7 @@ class MainActivity : ComponentActivity() {
             SmartVocabTheme {
                 val navController = rememberNavController()
                 
-                // Navigate to review screen if launched with the OPEN_REVIEW action
-                LaunchedEffect(intent) {
-                    val action = intent?.action
-                    if (action == "OPEN_REVIEW") {
-                        navController.navigate(Screen.FlashcardLearning.createRoute())
-                    }
-                }
-                
+
                 NavGraph(navController = navController)
             }
         }

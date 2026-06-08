@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
@@ -163,13 +164,6 @@ fun NotificationScreen(
                                 onDelete = { deleteNotification(notification.id) },
                                 onCardClick = {
                                     viewModel.markAsRead(notification.id)
-                                    if (notification.type == "REVIEW") {
-                                        navController.navigate(Screen.FlashcardLearning.createRoute())
-                                    }
-                                },
-                                onActionClick = {
-                                    viewModel.markAsRead(notification.id)
-                                    navController.navigate(Screen.FlashcardLearning.createRoute())
                                 }
                             )
                         }
@@ -184,24 +178,20 @@ fun NotificationScreen(
 fun NotificationCard(
     notification: AppNotification,
     onDelete: () -> Unit,
-    onCardClick: () -> Unit,
-    onActionClick: () -> Unit
+    onCardClick: () -> Unit
 ) {
     val icon = when (notification.type) {
         "REVIEW" -> Icons.Default.MenuBook
-        "ACHIEVEMENT" -> Icons.Default.EmojiEvents
         else -> Icons.Default.SystemUpdate
     }
 
     val iconBg = when (notification.type) {
         "REVIEW" -> MaterialTheme.colorScheme.primaryContainer
-        "ACHIEVEMENT" -> MaterialTheme.colorScheme.tertiaryContainer
         else -> MaterialTheme.colorScheme.surfaceVariant
     }
     
     val iconTint = when (notification.type) {
         "REVIEW" -> MaterialTheme.colorScheme.onPrimaryContainer
-        "ACHIEVEMENT" -> MaterialTheme.colorScheme.onTertiaryContainer
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 
@@ -276,12 +266,17 @@ fun NotificationCard(
                                 text = notification.title,
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
+                            Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = notification.getRelativeTime(),
                                 fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1
                             )
                         }
                         
@@ -294,22 +289,7 @@ fun NotificationCard(
                             lineHeight = 18.sp
                         )
 
-                        // Special Action button if Review Reminder
-                        if (notification.type == "REVIEW" && !notification.isRead) {
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Button(
-                                onClick = onActionClick,
-                                shape = RoundedCornerShape(16.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.primary,
-                                    contentColor = MaterialTheme.colorScheme.onPrimary
-                                ),
-                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
-                                modifier = Modifier.height(36.dp)
-                            ) {
-                                Text("Ôn tập ngay", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
+
                     }
 
                     // Delete button

@@ -86,7 +86,7 @@ class FirestoreVocabularyRepository : VocabularyRepository {
                     return@addSnapshotListener
                 }
                 if (snapshot != null) {
-                    setsList = snapshot.documents.mapNotNull { doc ->
+                        setsList = snapshot.documents.mapNotNull { doc ->
                         doc.toObject(VocabularySet::class.java)?.copy(id = doc.id)
                     }.sortedByDescending { it.createdAt }
                     updateCombinedSets()

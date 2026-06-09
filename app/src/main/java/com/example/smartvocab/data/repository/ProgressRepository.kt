@@ -16,7 +16,7 @@ import java.util.Locale
  * Lớp Repository kết nối trực tiếp với Firebase Firestore để xử lý các dữ liệu liên quan đến tiến trình học.
  * Sử dụng cấu trúc collection top-level và lọc theo userId.
  */
-class ProgressRepository {
+class   ProgressRepository {
     private val firestore = FirebaseFirestore.getInstance()
 
     /**

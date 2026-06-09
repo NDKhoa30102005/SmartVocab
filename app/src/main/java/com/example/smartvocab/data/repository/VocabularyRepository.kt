@@ -40,11 +40,15 @@ interface VocabularyRepository {
     suspend fun updateVocabularySet(set: VocabularySet): Result<Unit>
     suspend fun deleteVocabularySet(setId: String): Result<Unit>
     fun getWords(setId: String): Flow<List<VocabularyWord>>
+    suspend fun getAllWords(): Result<List<VocabularyWord>>
+    suspend fun getReviewWords(userId: String): Result<List<VocabularyWord>>
+    suspend fun getUnlearnedWords(userId: String): Result<List<VocabularyWord>>
     suspend fun addWord(word: VocabularyWord): Result<Unit>
     suspend fun addWords(words: List<VocabularyWord>): Result<Unit>
     suspend fun updateWord(word: VocabularyWord): Result<Unit>
     suspend fun deleteWord(setId: String, wordId: String): Result<Unit>
     suspend fun getVocabularySetById(setId: String): VocabularySet?
+    fun getVocabularySetFlow(setId: String): Flow<VocabularySet?>
     suspend fun getWordById(wordId: String): VocabularyWord?
     suspend fun toggleWordLearned(setId: String, wordId: String, isLearned: Boolean): Result<Unit>
     suspend fun updateFlashcardProgress(setId: String, wordId: String, rating: String): Result<Unit>
@@ -196,6 +200,56 @@ class FirestoreVocabularyRepository : VocabularyRepository {
         }
     }
 
+    override suspend fun getAllWords(): Result<List<VocabularyWord>> = runCatching {
+        firestore.collection("vocabulary_words")
+            .get()
+            .await()
+            .toObjects(VocabularyWord::class.java)
+    }
+
+    override suspend fun getReviewWords(userId: String): Result<List<VocabularyWord>> = runCatching {
+        val progressSnapshot = firestore.collection("learning_progress")
+            .whereEqualTo("userId", userId)
+            .get()
+            .await()
+            
+        val reviewWordIds = progressSnapshot.documents.mapNotNull { doc ->
+            val status = doc.getString("status") ?: "NEW"
+            val repCount = doc.getLong("repetitionCount") ?: 0L
+            val wordId = doc.getString("wordId") ?: ""
+            val isLearned = status != "NEW" || repCount > 0L
+            val isMastered = status == "MASTERED"
+            if (isLearned && !isMastered && wordId.isNotBlank()) wordId else null
+        }.toSet()
+        
+        if (reviewWordIds.isEmpty()) return@runCatching emptyList()
+        
+        val wordsSnapshot = firestore.collection("vocabulary_words").get().await()
+        val allWords = wordsSnapshot.documents.mapNotNull { doc ->
+            doc.toObject(VocabularyWord::class.java)?.copy(id = doc.id)
+        }
+        allWords.filter { it.id in reviewWordIds }.sortedBy { it.createdAt }
+    }
+
+    override suspend fun getUnlearnedWords(userId: String): Result<List<VocabularyWord>> = runCatching {
+        val progressSnapshot = firestore.collection("learning_progress")
+            .whereEqualTo("userId", userId)
+            .get()
+            .await()
+            
+        val learnedWordIds = progressSnapshot.documents.mapNotNull { doc ->
+            val status = doc.getString("status") ?: "NEW"
+            val repCount = doc.getLong("repetitionCount") ?: 0L
+            if (status != "NEW" || repCount > 0L) doc.getString("wordId") else null
+        }.toSet()
+        
+        val wordsSnapshot = firestore.collection("vocabulary_words").get().await()
+        val allWords = wordsSnapshot.documents.mapNotNull { doc ->
+            doc.toObject(VocabularyWord::class.java)?.copy(id = doc.id)
+        }
+        allWords.filter { it.id !in learnedWordIds }.sortedBy { it.createdAt }
+    }
+
     override suspend fun addWord(word: VocabularyWord): Result<Unit> = runCatching {
         val docRef = firestore.collection("vocabulary_words").document()
         val finalWord = word.copy(id = docRef.id)
@@ -268,6 +322,24 @@ class FirestoreVocabularyRepository : VocabularyRepository {
             doc.toObject(VocabularySet::class.java)?.copy(id = doc.id)
         } catch (e: Exception) {
             null
+        }
+    }
+
+    override fun getVocabularySetFlow(setId: String): Flow<VocabularySet?> = callbackFlow {
+        val reg = firestore.collection("vocabulary_sets").document(setId)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+                if (snapshot != null && snapshot.exists()) {
+                    trySend(snapshot.toObject(VocabularySet::class.java))
+                } else {
+                    trySend(null)
+                }
+            }
+        awaitClose {
+            reg.remove()
         }
     }
 

@@ -9,14 +9,11 @@ import com.example.smartvocab.data.model.VocabularyWord
 import com.example.smartvocab.data.repository.FirestoreVocabularyRepository
 import com.example.smartvocab.data.repository.VocabularyRepository
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.ListenerRegistration
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 class VocabSetDetailViewModel : ViewModel() {
     private val repository: VocabularyRepository = FirestoreVocabularyRepository()
-    private val firestore = FirebaseFirestore.getInstance()
     private val auth = FirebaseAuth.getInstance()
 
     // Real-time Detail & Words lists
@@ -32,7 +29,7 @@ class VocabSetDetailViewModel : ViewModel() {
     private val _errorMessage = mutableStateOf<String?>(null)
     val errorMessage: State<String?> = _errorMessage
 
-    private var setListener: ListenerRegistration? = null
+    private var setJob: Job? = null
     private var wordsJob: Job? = null
 
     // Form inputs for Add/Edit Word
@@ -88,17 +85,16 @@ class VocabSetDetailViewModel : ViewModel() {
         _errorMessage.value = null
 
         // Observe vocabulary set document changes in real-time
-        setListener?.remove()
-        setListener = firestore.collection("vocabulary_sets").document(setId)
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    _errorMessage.value = "Lỗi khi tải bộ từ: ${error.localizedMessage}"
-                    return@addSnapshotListener
+        setJob?.cancel()
+        setJob = viewModelScope.launch {
+            try {
+                repository.getVocabularySetFlow(setId).collect { set ->
+                    _vocabSet.value = set
                 }
-                if (snapshot != null && snapshot.exists()) {
-                    _vocabSet.value = snapshot.toObject(VocabularySet::class.java)
-                }
+            } catch (e: Exception) {
+                _errorMessage.value = "Lỗi khi tải bộ từ: ${e.localizedMessage}"
             }
+        }
 
         // Observe vocabulary words collection changes in real-time
         wordsJob?.cancel()
@@ -446,7 +442,7 @@ class VocabSetDetailViewModel : ViewModel() {
 
     override fun onCleared() {
         super.onCleared()
-        setListener?.remove()
+        setJob?.cancel()
         wordsJob?.cancel()
     }
 }

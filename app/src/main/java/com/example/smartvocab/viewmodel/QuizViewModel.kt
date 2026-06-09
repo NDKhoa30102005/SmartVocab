@@ -7,11 +7,9 @@ import androidx.lifecycle.viewModelScope
 import com.example.smartvocab.data.model.QuizQuestionData
 import com.example.smartvocab.data.model.VocabularyWord
 import com.example.smartvocab.data.repository.FirestoreVocabularyRepository
-import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.tasks.await
 
 /**
  * Lớp dữ liệu đại diện cho trạng thái UI State của màn hình Quiz.
@@ -46,15 +44,14 @@ class QuizViewModel(
         viewModelScope.launch {
             _uiState.value = QuizUiState(isLoading = true, errorMessage = null)
             try {
-                val allWordsSnapshot = FirebaseFirestore.getInstance().collection("vocabulary_words").get().await()
-                val globalWords = allWordsSnapshot.toObjects(VocabularyWord::class.java)
-                
+                val globalWords = repository.getAllWords().getOrThrow()
+
                 val sessionWords = if (setId.isNullOrBlank() || setId == "null") {
                     globalWords.shuffled().take(5)
                 } else {
                     globalWords.filter { it.setId == setId }.shuffled().take(5)
                 }
-                
+
                 if (sessionWords.isEmpty()) {
                     _uiState.value = _uiState.value.copy(
                         errorMessage = "Bộ từ này chưa có từ vựng nào để làm Quiz.",

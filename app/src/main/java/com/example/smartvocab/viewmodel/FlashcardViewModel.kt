@@ -10,8 +10,6 @@ import com.example.smartvocab.data.repository.FirestoreVocabularyRepository
 import com.example.smartvocab.data.repository.VocabularyRepository
 import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.Timestamp
 import kotlinx.coroutines.launch
 
 data class FlashcardUiState(
@@ -27,7 +25,6 @@ data class FlashcardUiState(
 
 class FlashcardViewModel : ViewModel() {
     private val repository: VocabularyRepository = FirestoreVocabularyRepository()
-    private val firestore = FirebaseFirestore.getInstance()
     private val auth = FirebaseAuth.getInstance()
 
     private val _uiState = mutableStateOf(FlashcardUiState())
@@ -42,113 +39,33 @@ class FlashcardViewModel : ViewModel() {
         val userId = auth.currentUser?.uid ?: ""
         
         viewModelScope.launch {
-            if (mode == "review") {
-                firestore.collection("learning_progress")
-                    .whereEqualTo("userId", userId)
-                    .get()
-                    .addOnSuccessListener { progressSnapshot ->
-                        // Bug fix 1: lọc bỏ wordId rỗng ("") để tránh match sai
-                        val reviewWordIds = progressSnapshot.documents.mapNotNull { doc ->
-                            val status = doc.getString("status") ?: "NEW"
-                            val repCount = doc.getLong("repetitionCount") ?: 0L
-                            val wordId = doc.getString("wordId") ?: ""
-                            val isLearned = status != "NEW" || repCount > 0L
-                            val isMastered = status == "MASTERED"
-                            if (isLearned && !isMastered && wordId.isNotBlank()) {
-                                wordId
-                            } else {
-                                null
-                            }
-                        }.toSet()
-                        
-                        if (reviewWordIds.isEmpty()) {
+            try {
+                val wordsList = when {
+                    mode == "review" -> {
+                        repository.getReviewWords(userId).getOrThrow()
+                    }
+                    setId.isNullOrBlank() || setId == "null" -> {
+                        repository.getUnlearnedWords(userId).getOrThrow()
+                    }
+                    else -> {
+                        repository.getWords(setId).collect { wordList ->
                             _uiState.value = _uiState.value.copy(
                                 isLoading = false,
-                                words = emptyList()
+                                words = wordList.sortedBy { it.createdAt }
                             )
-                            return@addOnSuccessListener
                         }
-                        
-                        // Bug fix 2: không filter theo userId vì từ hệ thống có userId="system"
-                        firestore.collection("vocabulary_words")
-                            .get()
-                            .addOnSuccessListener { wordsSnapshot ->
-                                val allWords = wordsSnapshot.documents.mapNotNull { doc ->
-                                    doc.toObject(VocabularyWord::class.java)?.copy(id = doc.id)
-                                }
-                                val reviewWords = allWords.filter { it.id in reviewWordIds }.sortedBy { it.createdAt }
-                                _uiState.value = _uiState.value.copy(
-                                    isLoading = false,
-                                    words = reviewWords
-                                )
-                            }
-                            .addOnFailureListener { exception ->
-                                _uiState.value = _uiState.value.copy(
-                                    isLoading = false,
-                                    errorMessage = "Lỗi khi tải từ vựng: ${exception.localizedMessage}"
-                                )
-                            }
+                        return@launch
                     }
-                    .addOnFailureListener { exception ->
-                        _uiState.value = _uiState.value.copy(
-                            isLoading = false,
-                            errorMessage = "Lỗi khi tải tiến trình: ${exception.localizedMessage}"
-                        )
-                    }
-            } else if (setId.isNullOrBlank() || setId == "null") {
-                firestore.collection("learning_progress")
-                    .whereEqualTo("userId", userId)
-                    .get()
-                    .addOnSuccessListener { progressSnapshot ->
-                        val learnedWordIds = progressSnapshot.documents.mapNotNull { doc ->
-                            val status = doc.getString("status") ?: "NEW"
-                            val repCount = doc.getLong("repetitionCount") ?: 0L
-                            if (status != "NEW" || repCount > 0L) {
-                                doc.getString("wordId")
-                            } else {
-                                null
-                            }
-                        }.toSet()
-                        
-                        firestore.collection("vocabulary_words")
-                            .get()
-                            .addOnSuccessListener { wordsSnapshot ->
-                                val allWords = wordsSnapshot.documents.mapNotNull { doc ->
-                                    doc.toObject(VocabularyWord::class.java)?.copy(id = doc.id)
-                                }
-                                val dueWords = allWords.filter { it.id !in learnedWordIds }.sortedBy { it.createdAt }
-                                _uiState.value = _uiState.value.copy(
-                                    isLoading = false,
-                                    words = dueWords
-                                )
-                            }
-                            .addOnFailureListener { exception ->
-                                _uiState.value = _uiState.value.copy(
-                                    isLoading = false,
-                                    errorMessage = "Lỗi khi tải từ vựng: ${exception.localizedMessage}"
-                                )
-                            }
-                    }
-                    .addOnFailureListener { exception ->
-                        _uiState.value = _uiState.value.copy(
-                            isLoading = false,
-                            errorMessage = "Lỗi khi tải tiến trình: ${exception.localizedMessage}"
-                        )
-                    }
-            } else {
-                try {
-                    repository.getWords(setId).collect { wordList ->
-                        _uiState.value = _uiState.value.copy(
-                            isLoading = false,
-                            words = wordList.sortedBy { it.createdAt }
-                        )
-                    }
-                } catch (e: Exception) {
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        errorMessage = "Lỗi khi tải dữ liệu: ${e.localizedMessage}"
-                    )
                 }
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    words = wordsList
+                )
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    errorMessage = "Lỗi khi tải dữ liệu: ${e.localizedMessage}"
+                )
             }
         }
     }
